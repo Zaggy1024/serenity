@@ -68,7 +68,7 @@ private:
     // (8.5.2.2) Motion vector clamping process
     MotionVector clamp_motion_vector(u8 plane, BlockContext const&, u32 block_row, u32 block_column, MotionVector vector);
     // From (8.5.1) Inter prediction process, steps 2-5
-    DecoderErrorOr<void> predict_inter_block(u8 plane, BlockContext const&, ReferenceIndex, u32 block_row, u32 block_column, u32 x, u32 y, u32 width, u32 height, u32 block_index, Span<u16> block_buffer);
+    DecoderErrorOr<void> predict_inter_block(u8 plane, BlockContext const&, ReferenceIndex, u32 block_row, u32 block_column, u32 x, u32 y, u32 width, u32 height, u32 block_index, u16* destination, u32 destination_stride);
 
     /* (8.6) Reconstruction and Dequantization */
 

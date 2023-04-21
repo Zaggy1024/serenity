@@ -831,7 +831,7 @@ DecoderErrorOr<void> Decoder::prepare_referenced_frame(Gfx::Size<u32> frame_size
     return {};
 }
 
-DecoderErrorOr<void> Decoder::predict_inter_block(u8 plane, BlockContext const& block_context, ReferenceIndex reference_index, u32 block_row, u32 block_column, u32 x, u32 y, u32 width, u32 height, u32 block_index, Span<u16> block_buffer)
+DecoderErrorOr<void> Decoder::predict_inter_block(u8 plane, BlockContext const& block_context, ReferenceIndex reference_index, u32 block_row, u32 block_column, u32 x, u32 y, u32 width, u32 height, u32 block_index, u16* destination, u32 destination_stride)
 {
     VERIFY(width <= maximum_block_dimensions && height <= maximum_block_dimensions);
     // 2. The motion vector selection process in section 8.5.2.1 is invoked with plane, refList, blockIdx as inputs
@@ -939,8 +939,6 @@ DecoderErrorOr<void> Decoder::predict_inter_block(u8 plane, BlockContext const& 
     auto const last_possible_reference_index = reference_index_for_row(subpixel_row_from_reference_row(intermediate_height - sample_offset));
     VERIFY(reference_frame_buffer.size() >= last_possible_reference_index);
 
-    VERIFY(block_buffer.size() >= static_cast<size_t>(width) * height);
-
     auto const reference_block_x = MV_BORDER + (offset_scaled_block_x >> SUBPEL_BITS);
     auto const reference_block_y = MV_BORDER + (offset_scaled_block_y >> SUBPEL_BITS);
     auto const reference_subpixel_x = offset_scaled_block_x & SUBPEL_MASK;
@@ -970,20 +968,21 @@ DecoderErrorOr<void> Decoder::predict_inter_block(u8 plane, BlockContext const& 
         if (copy_x && copy_y) {
             // We can memcpy here to avoid doing any real work.
             auto const* reference_scan_line = &reference_frame_buffer[reference_block_y * reference_frame_width + reference_block_x];
-            auto* destination_scan_line = block_buffer.data();
+            auto* destination_scan_line = destination;
 
             for (auto row = 0u; row < height; row++) {
                 memcpy(destination_scan_line, reference_scan_line, width * sizeof(*destination_scan_line));
                 reference_scan_line += reference_frame_width;
-                destination_scan_line += width;
+                destination_scan_line += destination_stride;
             }
 
             return {};
         }
 
-        auto horizontal_convolution_unscaled = [](auto bit_depth, auto* destination, auto width, auto height, auto const* source, auto source_stride, auto filter, auto subpixel_x) {
+        auto horizontal_convolution_unscaled = [](auto bit_depth, auto* destination, auto destination_stride, auto width, auto height, auto const* source, auto source_stride, auto filter, auto subpixel_x) {
             source -= sample_offset;
             auto const source_end_skip = source_stride - width;
+            auto const destination_end_skip = destination_stride - width;
 
             for (auto row = 0u; row < height; row++) {
                 for (auto column = 0u; column < width; column++) {
@@ -998,16 +997,18 @@ DecoderErrorOr<void> Decoder::predict_inter_block(u8 plane, BlockContext const& 
                     destination++;
                 }
                 source += source_end_skip;
+                destination += destination_end_skip;
             }
         };
 
         if (copy_y) {
-            horizontal_convolution_unscaled(bit_depth, block_buffer.data(), width, height, reference_start, reference_frame_width, block_context.interpolation_filter, reference_subpixel_x);
+            horizontal_convolution_unscaled(bit_depth, destination, destination_stride, width, height, reference_start, reference_frame_width, block_context.interpolation_filter, reference_subpixel_x);
             return {};
         }
 
-        auto vertical_convolution_unscaled = [](auto bit_depth, auto* destination, auto width, auto height, auto const* source, auto source_stride, auto filter, auto subpixel_y) {
+        auto vertical_convolution_unscaled = [](auto bit_depth, auto* destination, auto destination_stride, auto width, auto height, auto const* source, auto source_stride, auto filter, auto subpixel_y) {
             auto const source_end_skip = source_stride - width;
+            auto const destination_end_skip = destination_stride - width;
 
             for (auto row = 0u; row < height; row++) {
                 for (auto column = 0u; column < width; column++) {
@@ -1023,24 +1024,26 @@ DecoderErrorOr<void> Decoder::predict_inter_block(u8 plane, BlockContext const& 
                     destination++;
                 }
                 source += source_end_skip;
+                destination += destination_end_skip;
             }
         };
 
         if (copy_x) {
-            vertical_convolution_unscaled(bit_depth, block_buffer.data(), width, height, reference_start - (sample_offset * reference_frame_width), reference_frame_width, block_context.interpolation_filter, reference_subpixel_y);
+            vertical_convolution_unscaled(bit_depth, destination, destination_stride, width, height, reference_start - (sample_offset * reference_frame_width), reference_frame_width, block_context.interpolation_filter, reference_subpixel_y);
             return {};
         }
 
-        horizontal_convolution_unscaled(bit_depth, intermediate_buffer.data(), width, intermediate_height, reference_start - (sample_offset * reference_frame_width), reference_frame_width, block_context.interpolation_filter, reference_subpixel_x);
-        vertical_convolution_unscaled(bit_depth, block_buffer.data(), width, height, intermediate_buffer.data(), width, block_context.interpolation_filter, reference_subpixel_y);
+        horizontal_convolution_unscaled(bit_depth, intermediate_buffer.data(), width, width, intermediate_height, reference_start - (sample_offset * reference_frame_width), reference_frame_width, block_context.interpolation_filter, reference_subpixel_x);
+        vertical_convolution_unscaled(bit_depth, destination, destination_stride, width, height, intermediate_buffer.data(), width, block_context.interpolation_filter, reference_subpixel_y);
         return {};
     }
 
     // NOTE: Accumulators below are 32-bit to allow high bit-depth videos to decode without overflows.
     //       These should be changed when the accumulators above are.
 
-    auto horizontal_convolution_scaled = [](auto bit_depth, auto* destination, auto width, auto height, auto const* source, auto source_stride, auto filter, auto subpixel_x, auto scale_x) {
+    auto horizontal_convolution_scaled = [](auto bit_depth, auto* destination, auto destination_stride, auto width, auto height, auto const* source, auto source_stride, auto filter, auto subpixel_x, auto scale_x) {
         source -= sample_offset;
+        auto const destination_end_skip = destination_stride - width;
 
         for (auto row = 0u; row < height; row++) {
             auto scan_subpixel = subpixel_x;
@@ -1057,10 +1060,12 @@ DecoderErrorOr<void> Decoder::predict_inter_block(u8 plane, BlockContext const& 
                 scan_subpixel += scale_x;
             }
             source += source_stride;
+            destination += destination_end_skip;
         }
     };
 
-    auto vertical_convolution_scaled = [](auto bit_depth, auto* destination, auto width, auto height, auto const* source, auto source_stride, auto filter, auto subpixel_y, auto scale_y) {
+    auto vertical_convolution_scaled = [](auto bit_depth, auto* destination, auto destination_stride, auto width, auto height, auto const* source, auto source_stride, auto filter, auto subpixel_y, auto scale_y) {
+        auto const destination_end_skip = destination_stride - width;
         for (auto row = 0u; row < height; row++) {
             auto const* source_column_base = source + (subpixel_y >> SUBPEL_BITS) * source_stride;
 
@@ -1077,11 +1082,12 @@ DecoderErrorOr<void> Decoder::predict_inter_block(u8 plane, BlockContext const& 
                 destination++;
             }
             subpixel_y += scale_y;
+            destination += destination_end_skip;
         }
     };
 
-    horizontal_convolution_scaled(bit_depth, intermediate_buffer.data(), width, intermediate_height, reference_start - (sample_offset * reference_frame_width), reference_frame_width, block_context.interpolation_filter, offset_scaled_block_x & SUBPEL_MASK, scaled_step_x);
-    vertical_convolution_scaled(bit_depth, block_buffer.data(), width, height, intermediate_buffer.data(), width, block_context.interpolation_filter, reference_subpixel_y, scaled_step_y);
+    horizontal_convolution_scaled(bit_depth, intermediate_buffer.data(), width, width, intermediate_height, reference_start - (sample_offset * reference_frame_width), reference_frame_width, block_context.interpolation_filter, offset_scaled_block_x & SUBPEL_MASK, scaled_step_x);
+    vertical_convolution_scaled(bit_depth, destination, destination_stride, width, height, intermediate_buffer.data(), width, block_context.interpolation_filter, reference_subpixel_y, scaled_step_y);
 
     return {};
 }
@@ -1098,50 +1104,38 @@ DecoderErrorOr<void> Decoder::predict_inter(u8 plane, BlockContext const& block_
     // − a variable blockIdx, specifying how much of the block has already been predicted in units of 4x4 samples.
     // The outputs of this process are inter predicted samples in the current frame CurrFrame.
 
-    // The prediction arrays are formed by the following ordered steps:
-    // 1. The variable refList is set equal to 0.
-    // 2. through 5.
-    Array<u16, maximum_block_size> predicted_buffer;
-    auto predicted_span = predicted_buffer.span().trim(width * height);
-    TRY(predict_inter_block(plane, block_context, ReferenceIndex::Primary, block_context.row, block_context.column, x, y, width, height, block_index, predicted_span));
-    auto predicted_buffer_at = [&](Span<u16> buffer, u32 row, u32 column) -> u16& {
-        return buffer[row * width + column];
-    };
-
-    // 6. If isCompound is equal to 1, then the variable refList is set equal to 1 and steps 2, 3, 4 and 5 are repeated
-    // to form the prediction for the second reference.
-    // The inter predicted samples are then derived as follows:
     auto& frame_buffer = get_output_buffer(plane);
     VERIFY(!frame_buffer.is_empty());
     auto frame_size = block_context.frame_context.decoded_size(plane > 0);
-    auto frame_buffer_at = [&](u32 row, u32 column) -> u16& {
-        return frame_buffer[row * frame_size.width() + column];
-    };
 
-    auto width_in_frame_buffer = min(width, frame_size.width() - x);
-    auto height_in_frame_buffer = min(height, frame_size.height() - y);
+    // The prediction arrays are formed by the following ordered steps:
+    // 1. The variable refList is set equal to 0.
+    // NOTE: Steps 2 through 5 are contained within `predict_inter_block()`.
+    auto const width_in_frame_buffer = min(width, frame_size.width() - x);
+    auto const height_in_frame_buffer = min(height, frame_size.height() - y);
+    TRY(predict_inter_block(plane, block_context, ReferenceIndex::Primary, block_context.row, block_context.column, x, y, width_in_frame_buffer, height_in_frame_buffer, block_index, &frame_buffer.data()[y * frame_size.width() + x], frame_size.width()));
 
+    // The inter predicted samples are then derived as follows:
     // The variable isCompound is set equal to ref_frame[ 1 ] > NONE.
     // − If isCompound is equal to 0, CurrFrame[ plane ][ y + i ][ x + j ] is set equal to preds[ 0 ][ i ][ j ] for i = 0..h-1
     // and j = 0..w-1.
-    if (!block_context.is_compound()) {
-        for (auto i = 0u; i < height_in_frame_buffer; i++) {
-            for (auto j = 0u; j < width_in_frame_buffer; j++)
-                frame_buffer_at(y + i, x + j) = predicted_buffer_at(predicted_span, i, j);
-        }
-
+    // NOTE: We have predicted directly into the frame buffer above, so we can just return here.
+    //       To do a compound reference blend below, we will predict into a temporary buffer and then average that with the frame buffer.
+    if (!block_context.is_compound())
         return {};
-    }
+
+    // 6. If isCompound is equal to 1, then the variable refList is set equal to 1 and steps 2, 3, 4 and 5 are repeated
+    // to form the prediction for the second reference.
+    Array<u16, maximum_block_size> second_predicted_buffer;
+    TRY(predict_inter_block(plane, block_context, ReferenceIndex::Secondary, block_context.row, block_context.column, x, y, width_in_frame_buffer, height_in_frame_buffer, block_index, second_predicted_buffer.data(), width));
 
     // − Otherwise, CurrFrame[ plane ][ y + i ][ x + j ] is set equal to Round2( preds[ 0 ][ i ][ j ] + preds[ 1 ][ i ][ j ], 1 )
     // for i = 0..h-1 and j = 0..w-1.
-    Array<u16, maximum_block_size> second_predicted_buffer;
-    auto second_predicted_span = second_predicted_buffer.span().trim(width * height);
-    TRY(predict_inter_block(plane, block_context, ReferenceIndex::Secondary, block_context.row, block_context.column, x, y, width, height, block_index, second_predicted_span));
-
     for (auto i = 0u; i < height_in_frame_buffer; i++) {
-        for (auto j = 0u; j < width_in_frame_buffer; j++)
-            frame_buffer_at(y + i, x + j) = rounded_right_shift(predicted_buffer_at(predicted_span, i, j) + predicted_buffer_at(second_predicted_span, i, j), 1);
+        for (auto j = 0u; j < width_in_frame_buffer; j++) {
+            auto frame_buffer_index = (y + i) * frame_size.width() + x + j;
+            frame_buffer.data()[frame_buffer_index] = rounded_right_shift(frame_buffer.data()[frame_buffer_index] + second_predicted_buffer.data()[i * width + j], 1);
+        }
     }
 
     return {};

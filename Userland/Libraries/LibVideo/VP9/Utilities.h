@@ -34,6 +34,13 @@ u16 clip_1(u8 bit_depth, T x)
     return x;
 }
 
+template<typename T>
+static inline i32 rounded_right_shift(T value, u8 bits)
+{
+    value = (value + static_cast<T>(1u << (bits - 1u))) >> bits;
+    return static_cast<i32>(value);
+}
+
 template<u8 bits>
 inline u8 brev(u8 value)
 {

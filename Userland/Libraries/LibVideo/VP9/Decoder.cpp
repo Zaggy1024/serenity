@@ -1281,6 +1281,18 @@ DecoderErrorOr<void> Decoder::reconstruct_templated(u8 plane, BlockContext const
 template<u8 log2_of_block_size>
 ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d(BlockContext const& block_context, Span<Intermediate> dequantized, TransformSet transform_set)
 {
+    if (transform_set == TransformSet { TransformType::DCT, TransformType::DCT })
+        return inverse_transform_2d_templated<log2_of_block_size, TransformSet { TransformType::DCT, TransformType::DCT }>(block_context, dequantized);
+    if (transform_set == TransformSet { TransformType::ADST, TransformType::DCT })
+        return inverse_transform_2d_templated<log2_of_block_size, TransformSet { TransformType::ADST, TransformType::DCT }>(block_context, dequantized);
+    if (transform_set == TransformSet { TransformType::DCT, TransformType::ADST })
+        return inverse_transform_2d_templated<log2_of_block_size, TransformSet { TransformType::DCT, TransformType::ADST }>(block_context, dequantized);
+    return inverse_transform_2d_templated<log2_of_block_size, TransformSet { TransformType::ADST, TransformType::ADST }>(block_context, dequantized);
+}
+
+template<u8 log2_of_block_size, TransformSet transform_set>
+ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d_templated(BlockContext const& block_context, Span<Intermediate> dequantized)
+{
     static_assert(log2_of_block_size >= 2 && log2_of_block_size <= 5);
 
     // This process performs a 2D inverse transform for an array of size 2^n by 2^n stored in the 2D array Dequant.
@@ -1299,15 +1311,13 @@ ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d(BlockContext co
         if (block_context.frame_context.lossless)
             return DecoderError::with_description(DecoderErrorCategory::NotImplemented, "Lossless VP9 is not supported."sv);
 
-        switch (transform_set.second_transform) {
-        case TransformType::DCT:
+        if constexpr (transform_set.second_transform == TransformType::DCT) {
             // Otherwise, if TxType is equal to DCT_DCT or TxType is equal to ADST_DCT, apply an inverse DCT as
             // follows:
             // 1. Invoke the inverse DCT permutation process as specified in section 8.7.1.2 with the input variable n.
             // 2. Invoke the inverse DCT process as specified in section 8.7.1.3 with the input variable n.
             inverse_discrete_cosine_transform<log2_of_block_size>(row);
-            break;
-        case TransformType::ADST:
+        } else if constexpr (transform_set.second_transform == TransformType::ADST) {
             // 4. Otherwise (TxType is equal to DCT_ADST or TxType is equal to ADST_ADST), invoke the inverse ADST
             //    process as specified in section 8.7.1.9 with input variable n.
 
@@ -1316,9 +1326,8 @@ ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d(BlockContext co
                 return DecoderError::corrupted("ADST transform used for unsupported block transform size."sv);
             else
                 inverse_asymmetric_discrete_sine_transform<log2_of_block_size>(row);
-            break;
-        default:
-            return DecoderError::corrupted("Unknown tx_type"sv);
+        } else {
+            static_assert("Unknown transform type");
         }
 
         // 5. Set Dequant[ i ][ j ] equal to T[ j ] for j = 0..(n0-1).
@@ -1338,15 +1347,13 @@ ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d(BlockContext co
         if (block_context.frame_context.lossless)
             VERIFY_NOT_REACHED();
 
-        switch (transform_set.first_transform) {
-        case TransformType::DCT:
+        if constexpr (transform_set.first_transform == TransformType::DCT) {
             // Otherwise, if TxType is equal to DCT_DCT or TxType is equal to DCT_ADST, apply an inverse DCT as
             // follows:
             // 1. Invoke the inverse DCT permutation process as specified in section 8.7.1.2 with the input variable n.
             // 2. Invoke the inverse DCT process as specified in section 8.7.1.3 with the input variable n.
             inverse_discrete_cosine_transform<log2_of_block_size>(column.data());
-            break;
-        case TransformType::ADST:
+        } else if constexpr (transform_set.first_transform == TransformType::ADST) {
             // 4. Otherwise (TxType is equal to ADST_DCT or TxType is equal to ADST_ADST), invoke the inverse ADST
             //    process as specified in section 8.7.1.9 with input variable n.
 
@@ -1355,9 +1362,8 @@ ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d(BlockContext co
                 return DecoderError::corrupted("ADST transform used for unsupported block transform size."sv);
             else
                 inverse_asymmetric_discrete_sine_transform<log2_of_block_size>(column.data());
-            break;
-        default:
-            VERIFY_NOT_REACHED();
+        } else {
+            static_assert("Unknown transform type");
         }
 
         // 5. If Lossless is equal to 1, set Dequant[ i ][ j ] equal to T[ i ] for i = 0..(n0-1).

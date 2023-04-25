@@ -69,7 +69,7 @@ struct TransformSet {
     TransformType first_transform : 1;
     TransformType second_transform : 1;
 
-    bool operator==(TransformSet const& other) const
+    constexpr bool operator==(TransformSet const& other) const
     {
         return first_transform == other.first_transform && second_transform == other.second_transform;
     }

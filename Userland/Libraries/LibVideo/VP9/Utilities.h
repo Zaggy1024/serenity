@@ -42,11 +42,11 @@ static inline i32 rounded_right_shift(T value, u8 bits)
 }
 
 template<u8 bits>
-inline u8 brev(u8 value)
+constexpr ALWAYS_INLINE u8 brev(u8 value)
 {
     static_assert(bits <= 8, "brev() expects an 8-bit value.");
 
-    static constexpr auto lookup_table = [] {
+    constexpr auto lookup_table = [] {
         constexpr size_t value_count = 1 << bits;
         Array<u8, value_count> the_table;
         for (u8 lookup_value = 0; lookup_value < value_count; lookup_value++) {

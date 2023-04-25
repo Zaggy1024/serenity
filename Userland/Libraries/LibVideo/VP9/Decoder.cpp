@@ -1289,13 +1289,10 @@ ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d(BlockContext co
     // 1. Set the variable n0 (block_size) equal to 1 << n.
     constexpr auto block_size = 1u << log2_of_block_size;
 
-    Array<Intermediate, block_size> row;
-
     // 2. The row transforms with i = 0..(n0-1) are applied as follows:
     for (auto i = 0u; i < block_size; i++) {
         // 1. Set T[ j ] equal to Dequant[ i ][ j ] for j = 0..(n0-1).
-        for (auto j = 0u; j < block_size; j++)
-            row[j] = dequantized[i * block_size + j];
+        auto row = dequantized.slice(i * block_size, block_size);
 
         // 2. If Lossless is equal to 1, invoke the Inverse WHT process as specified in section 8.7.1.10 with shift equal
         //    to 2.
@@ -1307,9 +1304,9 @@ ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d(BlockContext co
             // Otherwise, if TxType is equal to DCT_DCT or TxType is equal to ADST_DCT, apply an inverse DCT as
             // follows:
             // 1. Invoke the inverse DCT permutation process as specified in section 8.7.1.2 with the input variable n.
-            TRY(inverse_discrete_cosine_transform_array_permutation<log2_of_block_size>(row.span()));
+            TRY(inverse_discrete_cosine_transform_array_permutation<log2_of_block_size>(row));
             // 2. Invoke the inverse DCT process as specified in section 8.7.1.3 with the input variable n.
-            TRY(inverse_discrete_cosine_transform<log2_of_block_size>(row.span()));
+            TRY(inverse_discrete_cosine_transform<log2_of_block_size>(row));
             break;
         case TransformType::ADST:
             // 4. Otherwise (TxType is equal to DCT_ADST or TxType is equal to ADST_ADST), invoke the inverse ADST
@@ -1319,15 +1316,14 @@ ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d(BlockContext co
             if constexpr (log2_of_block_size < 2 || log2_of_block_size > 4)
                 return DecoderError::corrupted("ADST transform used for unsupported block transform size."sv);
             else
-                TRY(inverse_asymmetric_discrete_sine_transform<log2_of_block_size>(row.span()));
+                TRY(inverse_asymmetric_discrete_sine_transform<log2_of_block_size>(row));
             break;
         default:
             return DecoderError::corrupted("Unknown tx_type"sv);
         }
 
         // 5. Set Dequant[ i ][ j ] equal to T[ j ] for j = 0..(n0-1).
-        for (auto j = 0u; j < block_size; j++)
-            dequantized[i * block_size + j] = row[j];
+        // This is set by the calls to transforms above.
     }
 
     Array<Intermediate, block_size> column;

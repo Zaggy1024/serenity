@@ -1495,24 +1495,24 @@ DecoderErrorOr<void> Decoder::update_reference_frames(FrameContext const& frame_
                     // This will create an extended border on the top and bottom of the reference frame to avoid having to bounds check
                     // inter-prediction.
                     auto source_y = min(destination_y >= MV_BORDER ? destination_y - MV_BORDER : 0, height - 1);
-                    auto const* source = &original_buffer[source_y * stride];
-                    auto* destination = &frame_store_buffer[destination_y * frame_store_width + MV_BORDER];
-                    AK::TypedTransfer<RemoveReference<decltype(*destination)>>::copy(destination, source, width);
+                    auto const* source = &original_buffer.data()[source_y * stride];
+                    auto* destination = &frame_store_buffer.data()[destination_y * frame_store_width + MV_BORDER];
+                    memcpy(destination, source, width * sizeof(*destination));
                 }
 
                 for (auto destination_y = 0u; destination_y < frame_store_height; destination_y++) {
                     // Stretch the leftmost samples out into the border.
-                    auto sample = frame_store_buffer[destination_y * frame_store_width + MV_BORDER];
+                    auto sample = frame_store_buffer.data()[destination_y * frame_store_width + MV_BORDER];
 
                     for (auto destination_x = 0u; destination_x < MV_BORDER; destination_x++) {
-                        frame_store_buffer[destination_y * frame_store_width + destination_x] = sample;
+                        frame_store_buffer.data()[destination_y * frame_store_width + destination_x] = sample;
                     }
 
                     // Stretch the rightmost samples out into the border.
-                    sample = frame_store_buffer[destination_y * frame_store_width + MV_BORDER + width - 1];
+                    sample = frame_store_buffer.data()[destination_y * frame_store_width + MV_BORDER + width - 1];
 
                     for (auto destination_x = MV_BORDER + width; destination_x < frame_store_width; destination_x++) {
-                        frame_store_buffer[destination_y * frame_store_width + destination_x] = sample;
+                        frame_store_buffer.data()[destination_y * frame_store_width + destination_x] = sample;
                     }
                 }
             }

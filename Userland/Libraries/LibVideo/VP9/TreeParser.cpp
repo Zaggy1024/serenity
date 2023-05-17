@@ -61,7 +61,7 @@ inline ErrorOr<OutputType> parse_tree(BooleanDecoder& decoder, TreeSelection tre
     int n = 0;
     do {
         u8 node = n >> 1;
-        n = tree[n + TRY(decoder.read_bool(probability_getter(node)))];
+        n = tree[n + decoder.read_bool(probability_getter(node))];
     } while (n > 0);
 
     return static_cast<OutputType>(-n);

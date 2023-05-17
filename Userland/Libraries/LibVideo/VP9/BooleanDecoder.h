@@ -17,25 +17,36 @@ namespace Video::VP9 {
 class BooleanDecoder {
 public:
     /* (9.2) */
-    static ErrorOr<BooleanDecoder> initialize(MaybeOwned<BigEndianInputBitStream> bit_stream, size_t bytes);
-    ErrorOr<bool> read_bool(u8 probability);
-    ErrorOr<u8> read_literal(u8 bits);
-    size_t bits_remaining() const;
+    static ErrorOr<BooleanDecoder> initialize(ReadonlyBytes data);
+    bool read_bool(u8 probability);
+    u8 read_literal(u8 bits);
     ErrorOr<void> finish_decode();
 
 private:
-    BooleanDecoder(MaybeOwned<BigEndianInputBitStream>&& bit_stream, u8 value, u8 range, u64 bits_left)
-        : m_bit_stream(move(bit_stream))
-        , m_value(value)
-        , m_range(range)
-        , m_bits_left(bits_left)
+    using ValueType = size_t;
+    static constexpr u8 reserve_bytes = sizeof(ValueType) - 1;
+    static constexpr u8 reserve_bits = reserve_bytes * 8;
+
+    BooleanDecoder(u8 const* data, u64 bytes_left)
+        : m_data(data + 1)
+        , m_bytes_left(bytes_left - 1)
+        , m_range(255)
+        , m_value(static_cast<ValueType>(*data) << reserve_bits)
+        , m_value_bits_left(8)
     {
+        fill_reservoir();
     }
 
-    MaybeOwned<BigEndianInputBitStream> m_bit_stream;
-    u8 m_value { 0 };
-    u8 m_range { 0 };
-    u64 m_bits_left { 0 };
+    void fill_reservoir();
+
+    u8 const* m_data;
+    size_t m_bytes_left { 0 };
+    bool m_overread { false };
+    // This value will never exceed 255. If this is a u8, the compiler will generate a truncation in read_bool().
+    u32 m_range { 0 };
+    ValueType m_value { 0 };
+    // Like above, this will never exceed reserve_bits, but will truncate if it is a u8.
+    u32 m_value_bits_left { 0 };
 };
 
 }

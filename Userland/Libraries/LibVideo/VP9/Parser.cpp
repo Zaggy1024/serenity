@@ -593,7 +593,8 @@ void Parser::setup_past_independence()
 
 DecoderErrorOr<void> Parser::compressed_header(FrameContext& frame_context)
 {
-    auto decoder = TRY_READ(BooleanDecoder::initialize(MaybeOwned(frame_context.bit_stream), frame_context.header_size_in_bytes));
+    auto decoder = TRY(frame_context.create_range_decoder(frame_context.header_size_in_bytes));
+
     frame_context.transform_mode = TRY(read_tx_mode(decoder, frame_context));
     if (frame_context.transform_mode == TransformMode::Select)
         TRY(tx_mode_probs(decoder));
@@ -620,9 +621,9 @@ DecoderErrorOr<TransformMode> Parser::read_tx_mode(BooleanDecoder& decoder, Fram
         return TransformMode::Only_4x4;
     }
 
-    auto tx_mode = TRY_READ(decoder.read_literal(2));
+    auto tx_mode = decoder.read_literal(2);
     if (tx_mode == to_underlying(TransformMode::Allow_32x32))
-        tx_mode += TRY_READ(decoder.read_literal(1));
+        tx_mode += decoder.read_literal(1);
     return static_cast<TransformMode>(tx_mode);
 }
 
@@ -646,7 +647,7 @@ DecoderErrorOr<void> Parser::tx_mode_probs(BooleanDecoder& decoder)
 
 DecoderErrorOr<u8> Parser::diff_update_prob(BooleanDecoder& decoder, u8 prob)
 {
-    auto update_prob = TRY_READ(decoder.read_bool(252));
+    auto update_prob = decoder.read_bool(252);
     if (update_prob) {
         auto delta_prob = TRY(decode_term_subexp(decoder));
         prob = inv_remap_prob(delta_prob, prob);
@@ -656,17 +657,17 @@ DecoderErrorOr<u8> Parser::diff_update_prob(BooleanDecoder& decoder, u8 prob)
 
 DecoderErrorOr<u8> Parser::decode_term_subexp(BooleanDecoder& decoder)
 {
-    if (TRY_READ(decoder.read_literal(1)) == 0)
-        return TRY_READ(decoder.read_literal(4));
-    if (TRY_READ(decoder.read_literal(1)) == 0)
-        return TRY_READ(decoder.read_literal(4)) + 16;
-    if (TRY_READ(decoder.read_literal(1)) == 0)
-        return TRY_READ(decoder.read_literal(5)) + 32;
+    if (decoder.read_literal(1) == 0)
+        return decoder.read_literal(4);
+    if (decoder.read_literal(1) == 0)
+        return decoder.read_literal(4) + 16;
+    if (decoder.read_literal(1) == 0)
+        return decoder.read_literal(5) + 32;
 
-    auto v = TRY_READ(decoder.read_literal(7));
+    auto v = decoder.read_literal(7);
     if (v < 65)
         return v + 64;
-    return (v << 1u) - 1 + TRY_READ(decoder.read_literal(1));
+    return (v << 1u) - 1 + decoder.read_literal(1);
 }
 
 u8 Parser::inv_remap_prob(u8 delta_prob, u8 prob)
@@ -691,7 +692,7 @@ DecoderErrorOr<void> Parser::read_coef_probs(BooleanDecoder& decoder, TransformM
 {
     auto max_tx_size = tx_mode_to_biggest_tx_size[to_underlying(transform_mode)];
     for (u8 transform_size = 0; transform_size <= max_tx_size; transform_size++) {
-        auto update_probs = TRY_READ(decoder.read_literal(1));
+        auto update_probs = decoder.read_literal(1);
         if (update_probs == 1) {
             for (auto i = 0; i < 2; i++) {
                 for (auto j = 0; j < 2; j++) {
@@ -770,11 +771,11 @@ DecoderErrorOr<void> Parser::frame_reference_mode(FrameContext& frame_context, B
     }
     ReferenceMode reference_mode;
     if (compound_reference_allowed) {
-        auto non_single_reference = TRY_READ(decoder.read_literal(1));
+        auto non_single_reference = decoder.read_literal(1);
         if (non_single_reference == 0) {
             reference_mode = SingleReference;
         } else {
-            auto reference_select = TRY_READ(decoder.read_literal(1));
+            auto reference_select = decoder.read_literal(1);
             if (reference_select == 0)
                 reference_mode = CompoundReference;
             else
@@ -884,8 +885,8 @@ DecoderErrorOr<void> Parser::mv_probs(BooleanDecoder& decoder, FrameContext cons
 
 DecoderErrorOr<u8> Parser::update_mv_prob(BooleanDecoder& decoder, u8 prob)
 {
-    if (TRY_READ(decoder.read_bool(252))) {
-        return (TRY_READ(decoder.read_literal(7)) << 1u) | 1u;
+    if (decoder.read_bool(252)) {
+        return (decoder.read_literal(7) << 1u) | 1u;
     }
     return prob;
 }
@@ -938,7 +939,6 @@ DecoderErrorOr<void> Parser::decode_tiles(FrameContext& frame_context)
             auto above_segmentation_ids_for_tile = safe_slice(above_segmentation_ids.span(), columns_start, columns_end - columns_start);
 
             tile_workloads[tile_col].append(TRY(TileContext::try_create(frame_context, tile_size, rows_start, rows_end, columns_start, columns_end, above_partition_context_for_tile, above_non_zero_tokens_view, above_segmentation_ids_for_tile)));
-            TRY_READ(frame_context.bit_stream.discard(tile_size));
         }
     }
 
@@ -1536,15 +1536,15 @@ DecoderErrorOr<i32> Parser::read_coef(BooleanDecoder& decoder, u8 bit_depth, Tok
     i32 coef = extra_bits[token][2];
     if (token == DctValCat6) {
         for (size_t e = 0; e < (u8)(bit_depth - 8); e++) {
-            auto high_bit = TRY_READ(decoder.read_bool(255));
+            auto high_bit = decoder.read_bool(255);
             coef += high_bit << (5 + bit_depth - e);
         }
     }
     for (size_t e = 0; e < num_extra; e++) {
-        auto coef_bit = TRY_READ(decoder.read_bool(cat_probs[cat][e]));
+        auto coef_bit = decoder.read_bool(cat_probs[cat][e]);
         coef += coef_bit << (num_extra - 1 - e);
     }
-    bool sign_bit = TRY_READ(decoder.read_literal(1));
+    bool sign_bit = decoder.read_literal(1);
     coef = sign_bit ? -coef : coef;
     return coef;
 }

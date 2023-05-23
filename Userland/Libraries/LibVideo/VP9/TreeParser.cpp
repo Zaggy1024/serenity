@@ -682,10 +682,10 @@ TokensContext TreeParser::get_context_for_other_tokens(Array<u8, 1024> token_cac
 
     u32 neighbor_a, neighbor_b;
     if (pixel_y > 0 && pixel_x > 0) {
-        if (transform_set == TransformSet { TransformType::DCT, TransformType::ADST }) {
+        if (transform_set == TransformSet::DCT_ADST) {
             neighbor_a = above_token_energy;
             neighbor_b = above_token_energy;
-        } else if (transform_set == TransformSet { TransformType::ADST, TransformType::DCT }) {
+        } else if (transform_set == TransformSet::ADST_DCT) {
             neighbor_a = left_token_energy;
             neighbor_b = left_token_energy;
         } else {

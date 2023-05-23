@@ -86,9 +86,9 @@ private:
 
     // (8.7) Inverse transform process
     template<u8 log2_of_block_size>
-    DecoderErrorOr<void> inverse_transform_2d(BlockContext const&, Span<Intermediate> dequantized, TransformSet);
+    DecoderErrorOr<void> inverse_transform_2d(Span<Intermediate> dequantized, TransformSet);
     template<u8 log2_of_block_size, TransformSet>
-    DecoderErrorOr<void> inverse_transform_2d_templated(BlockContext const&, Span<Intermediate> dequantized);
+    DecoderErrorOr<void> inverse_transform_2d_templated(Span<Intermediate> dequantized);
 
     /* (8.10) Reference Frame Update Process */
     DecoderErrorOr<void> update_reference_frames(FrameContext const&);

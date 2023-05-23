@@ -60,19 +60,12 @@ enum TransformSize : u8 {
     Transform_32x32 = 3,
 };
 
-enum class TransformType : u8 {
-    DCT = 0,
-    ADST = 1,
-};
-
-struct TransformSet {
-    TransformType first_transform : 1;
-    TransformType second_transform : 1;
-
-    constexpr bool operator==(TransformSet const& other) const
-    {
-        return first_transform == other.first_transform && second_transform == other.second_transform;
-    }
+enum class TransformSet {
+    DCT_DCT,
+    ADST_DCT,
+    DCT_ADST,
+    ADST_ADST,
+    WHT_WHT,
 };
 
 enum ReferenceMode : u8 {

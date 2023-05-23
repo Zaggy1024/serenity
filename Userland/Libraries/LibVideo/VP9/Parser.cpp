@@ -1410,10 +1410,15 @@ static TransformSize get_uv_transform_size(TransformSize transform_size, BlockSu
 static TransformSet select_transform_type(BlockContext const& block_context, u8 plane, TransformSize transform_size, u32 block_index)
 {
     if (plane > 0 || transform_size == Transform_32x32)
-        return TransformSet { TransformType::DCT, TransformType::DCT };
+        return TransformSet::DCT_DCT;
     if (transform_size == Transform_4x4) {
-        if (block_context.frame_context.lossless || block_context.is_inter_predicted())
-            return TransformSet { TransformType::DCT, TransformType::DCT };
+        // NOTE: Spec says to return DCT_DCT when lossless is enabled. We return a new WHT_WHT value here
+        //       so that transform selection in Decoder.cpp can be simpler. When implementing lossless
+        //       decoding, this should be checked for validity, since TreeParser also uses this value.
+        if (block_context.frame_context.lossless)
+            return TransformSet::WHT_WHT;
+        if (block_context.is_inter_predicted())
+            return TransformSet::DCT_DCT;
 
         return mode_to_txfm_map[to_underlying(block_context.size < Block_8x8 ? block_context.sub_block_prediction_modes[block_index] : block_context.y_prediction_mode())];
     }
@@ -1487,27 +1492,24 @@ DecoderErrorOr<bool> Parser::residual(BlockContext& block_context, bool has_bloc
 
 static u16 const* get_scan(TransformSize transform_size, TransformSet transform_set)
 {
-    constexpr TransformSet adst_dct { TransformType::ADST, TransformType::DCT };
-    constexpr TransformSet dct_adst { TransformType::DCT, TransformType::ADST };
-
     if (transform_size == Transform_4x4) {
-        if (transform_set == adst_dct)
+        if (transform_set == TransformSet::ADST_DCT)
             return row_scan_4x4;
-        if (transform_set == dct_adst)
+        if (transform_set == TransformSet::DCT_ADST)
             return col_scan_4x4;
         return default_scan_4x4;
     }
     if (transform_size == Transform_8x8) {
-        if (transform_set == adst_dct)
+        if (transform_set == TransformSet::ADST_DCT)
             return row_scan_8x8;
-        if (transform_set == dct_adst)
+        if (transform_set == TransformSet::DCT_ADST)
             return col_scan_8x8;
         return default_scan_8x8;
     }
     if (transform_size == Transform_16x16) {
-        if (transform_set == adst_dct)
+        if (transform_set == TransformSet::ADST_DCT)
             return row_scan_16x16;
-        if (transform_set == dct_adst)
+        if (transform_set == TransformSet::DCT_ADST)
             return col_scan_16x16;
         return default_scan_16x16;
     }

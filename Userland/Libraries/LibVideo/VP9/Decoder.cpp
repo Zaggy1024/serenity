@@ -1370,17 +1370,15 @@ ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d_templated(Span<
             static_assert("Unknown transform type");
         }
 
-        // 5. If Lossless is equal to 1, set Dequant[ i ][ j ] equal to T[ i ] for i = 0..(n0-1).
-        for (auto i = 0u; i < block_size; i++)
-            dequantized[i * block_size + j] = column[i];
-
-        // 6. Otherwise (Lossless is equal to 0), set Dequant[ i ][ j ] equal to Round2( T[ i ], Min( 6, n + 2 ) )
-        //    for i = 0..(n0-1).
-        if constexpr (transform_set != TransformSet::WHT_WHT) {
-            for (auto i = 0u; i < block_size; i++) {
-                auto index = i * block_size + j;
-                dequantized[index] = rounded_right_shift(dequantized[index], min(6, log2_of_block_size + 2));
-            }
+        if constexpr (transform_set == TransformSet::WHT_WHT) {
+            // 5. If Lossless is equal to 1, set Dequant[ i ][ j ] equal to T[ i ] for i = 0..(n0-1).
+            for (auto i = 0u; i < block_size; i++)
+                dequantized[i * block_size + j] = column[i];
+        } else {
+            // 6. Otherwise (Lossless is equal to 0), set Dequant[ i ][ j ] equal to Round2( T[ i ], Min( 6, n + 2 ) )
+            //    for i = 0..(n0-1).
+            for (auto i = 0u; i < block_size; i++)
+                dequantized[i * block_size + j] = rounded_right_shift(column[i], min(6, log2_of_block_size + 2));
         }
     }
 

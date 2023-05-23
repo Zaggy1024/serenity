@@ -1241,24 +1241,29 @@ DecoderErrorOr<void> Decoder::reconstruct_templated(u8 plane, BlockContext const
     // 1. Dequant[ i ][ j ] is set equal to ( Tokens[ i * n0 + j ] * get_ac_quant( plane ) ) / dqDenom
     //    for i = 0..(n0-1), for j = 0..(n0-1)
     Array<Intermediate, block_size * block_size> dequantized;
-    auto quantizers = block_context.frame_context.segment_quantizers[block_context.segment_id];
-    Intermediate ac_quant = plane == 0 ? quantizers.y_ac_quantizer : quantizers.uv_ac_quantizer;
-    auto const* tokens_raw = block_context.residual_tokens.data();
-    for (u32 i = 0; i < dequantized.size(); i++) {
-        dequantized[i] = (tokens_raw[i] * ac_quant) / dq_denominator;
+
+    if (block_context.residual_token_count == 0) {
+        memset(dequantized.data(), 0, sizeof(dequantized));
+    } else {
+        auto quantizers = block_context.frame_context.segment_quantizers[block_context.segment_id];
+        Intermediate ac_quant = plane == 0 ? quantizers.y_ac_quantizer : quantizers.uv_ac_quantizer;
+        auto const* tokens_raw = block_context.residual_tokens.data();
+        for (u32 i = 0; i < dequantized.size(); i++) {
+            dequantized[i] = (tokens_raw[i] * ac_quant) / dq_denominator;
+        }
+
+        // 2. Dequant[ 0 ][ 0 ] is set equal to ( Tokens[ 0 ] * get_dc_quant( plane ) ) / dqDenom
+        dequantized[0] = (block_context.residual_tokens[0] * (plane == 0 ? quantizers.y_dc_quantizer : quantizers.uv_dc_quantizer)) / dq_denominator;
+
+        // It is a requirement of bitstream conformance that the values written into the Dequant array in steps 1 and 2
+        // are representable by a signed integer with 8 + BitDepth bits.
+        // Note: Since bounds checks just ensure that we will not have resulting values that will overflow, it's non-fatal
+        // to allow these bounds to be violated. Therefore, we can avoid the performance cost here.
+
+        // 3. Invoke the 2D inverse transform block process defined in section 8.7.2 with the variable n as input.
+        //    The inverse transform outputs are stored back to the Dequant buffer.
+        TRY(inverse_transform_2d<log2_of_block_size>(dequantized, transform_set, block_context.residual_token_count));
     }
-
-    // 2. Dequant[ 0 ][ 0 ] is set equal to ( Tokens[ 0 ] * get_dc_quant( plane ) ) / dqDenom
-    dequantized[0] = (block_context.residual_tokens[0] * (plane == 0 ? quantizers.y_dc_quantizer : quantizers.uv_dc_quantizer)) / dq_denominator;
-
-    // It is a requirement of bitstream conformance that the values written into the Dequant array in steps 1 and 2
-    // are representable by a signed integer with 8 + BitDepth bits.
-    // Note: Since bounds checks just ensure that we will not have resulting values that will overflow, it's non-fatal
-    // to allow these bounds to be violated. Therefore, we can avoid the performance cost here.
-
-    // 3. Invoke the 2D inverse transform block process defined in section 8.7.2 with the variable n as input.
-    //    The inverse transform outputs are stored back to the Dequant buffer.
-    TRY(inverse_transform_2d<log2_of_block_size>(dequantized, transform_set));
 
     // 4. CurrFrame[ plane ][ y + i ][ x + j ] is set equal to Clip1( CurrFrame[ plane ][ y + i ][ x + j ] + Dequant[ i ][ j ] )
     //    for i = 0..(n0-1) and j = 0..(n0-1).
@@ -1279,24 +1284,68 @@ DecoderErrorOr<void> Decoder::reconstruct_templated(u8 plane, BlockContext const
 }
 
 template<u8 log2_of_block_size>
-ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d(Span<Intermediate> dequantized, TransformSet transform_set)
+ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d(Span<Intermediate> dequantized, TransformSet transform_set, u32 residual_token_count)
 {
     switch (transform_set) {
     case TransformSet::DCT_DCT:
-        return inverse_transform_2d_templated<log2_of_block_size, TransformSet::DCT_DCT>(dequantized);
+        return inverse_transform_2d_selecting_row_count<log2_of_block_size, TransformSet::DCT_DCT>(dequantized, residual_token_count);
     case TransformSet::ADST_DCT:
-        return inverse_transform_2d_templated<log2_of_block_size, TransformSet::ADST_DCT>(dequantized);
+        return inverse_transform_2d_selecting_row_count<log2_of_block_size, TransformSet::ADST_DCT>(dequantized, residual_token_count);
     case TransformSet::DCT_ADST:
-        return inverse_transform_2d_templated<log2_of_block_size, TransformSet::DCT_ADST>(dequantized);
+        return inverse_transform_2d_selecting_row_count<log2_of_block_size, TransformSet::DCT_ADST>(dequantized, residual_token_count);
     case TransformSet::ADST_ADST:
-        return inverse_transform_2d_templated<log2_of_block_size, TransformSet::ADST_ADST>(dequantized);
+        return inverse_transform_2d_selecting_row_count<log2_of_block_size, TransformSet::ADST_ADST>(dequantized, residual_token_count);
     case TransformSet::WHT_WHT:
-        return inverse_transform_2d_templated<log2_of_block_size, TransformSet::WHT_WHT>(dequantized);
+        return inverse_transform_2d_selecting_row_count<log2_of_block_size, TransformSet::WHT_WHT>(dequantized, residual_token_count);
     }
     VERIFY_NOT_REACHED();
 }
 
 template<u8 log2_of_block_size, TransformSet transform_set>
+ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d_selecting_row_count(Span<Intermediate> dequantized, u32 residual_token_count)
+{
+    if (residual_token_count == 1)
+        return inverse_transform_2d_templated<log2_of_block_size, transform_set, 1>(dequantized);
+
+    // OPTIMIZATION: We don't need to calculate inverse transform for rows that have zero coefficients and therefore contribute
+    //               nothing. Check the scan-out that is used in the parser to store these coefficients and find the last
+    //               token index that is written to for the row at half the block size, and quarter the block size if the
+    //               block is large enough. Use this to check the coefficient count we are passed here and only do the minimum
+    //               number of rows for those sizes.
+    constexpr auto block_size = 1u << log2_of_block_size;
+    constexpr auto last_coef_at_row_count = [](auto rows) consteval
+    {
+        auto const* scan = get_scan(static_cast<TransformSize>(log2_of_block_size), transform_set);
+        size_t i = 0;
+        for (size_t i = 0; i < block_size; i++) {
+            u8 y = scan[i] / block_size;
+            if (y > rows)
+                break;
+        }
+        return i;
+    };
+
+    // This value can be adjusted based on benchmarks, currently it is a fairly arbitrary number.
+    // If the work done in the fastest path selected for a block size is faster than the average cost of these
+    // branches, then it would be worth raising this limit.
+    constexpr auto minimum_size_for_fast_path = 4;
+
+    constexpr auto half_block_size = block_size / 2;
+    if constexpr (half_block_size >= minimum_size_for_fast_path) {
+        if (residual_token_count <= last_coef_at_row_count(half_block_size))
+            return inverse_transform_2d_templated<log2_of_block_size, transform_set, half_block_size>(dequantized);
+    }
+
+    constexpr auto quarter_block_size = half_block_size / 2;
+    if constexpr (quarter_block_size >= minimum_size_for_fast_path) {
+        if (residual_token_count <= last_coef_at_row_count(quarter_block_size))
+            return inverse_transform_2d_templated<log2_of_block_size, transform_set, quarter_block_size>(dequantized);
+    }
+
+    return inverse_transform_2d_templated<log2_of_block_size, transform_set>(dequantized);
+}
+
+template<u8 log2_of_block_size, TransformSet transform_set, u8 rows>
 ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d_templated(Span<Intermediate> dequantized)
 {
     static_assert(log2_of_block_size >= 2 && log2_of_block_size <= 5);
@@ -1306,9 +1355,11 @@ ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d_templated(Span<
 
     // 1. Set the variable n0 (block_size) equal to 1 << n.
     constexpr auto block_size = 1u << log2_of_block_size;
+    static_assert(rows <= block_size || rows == NumericLimits<u8>::max());
+    constexpr auto input_rows = min(rows, block_size);
 
     // 2. The row transforms with i = 0..(n0-1) are applied as follows:
-    for (auto i = 0u; i < block_size; i++) {
+    for (auto i = 0u; i < input_rows; i++) {
         // 1. Set T[ j ] equal to Dequant[ i ][ j ] for j = 0..(n0-1).
         auto* row = &dequantized[i * block_size];
 

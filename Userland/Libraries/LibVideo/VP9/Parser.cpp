@@ -1490,32 +1490,6 @@ DecoderErrorOr<bool> Parser::residual(BlockContext& block_context, bool has_bloc
     return block_had_non_zero_tokens;
 }
 
-static u16 const* get_scan(TransformSize transform_size, TransformSet transform_set)
-{
-    if (transform_size == Transform_4x4) {
-        if (transform_set == TransformSet::ADST_DCT)
-            return row_scan_4x4;
-        if (transform_set == TransformSet::DCT_ADST)
-            return col_scan_4x4;
-        return default_scan_4x4;
-    }
-    if (transform_size == Transform_8x8) {
-        if (transform_set == TransformSet::ADST_DCT)
-            return row_scan_8x8;
-        if (transform_set == TransformSet::DCT_ADST)
-            return col_scan_8x8;
-        return default_scan_8x8;
-    }
-    if (transform_size == Transform_16x16) {
-        if (transform_set == TransformSet::ADST_DCT)
-            return row_scan_16x16;
-        if (transform_set == TransformSet::DCT_ADST)
-            return col_scan_16x16;
-        return default_scan_16x16;
-    }
-    return default_scan_32x32;
-}
-
 DecoderErrorOr<bool> Parser::tokens(BlockContext& block_context, size_t plane, u32 sub_block_column, u32 sub_block_row, TransformSize transform_size, TransformSet transform_set, Array<u8, 1024> token_cache)
 {
     block_context.residual_tokens.fill(0);
@@ -1551,6 +1525,7 @@ DecoderErrorOr<bool> Parser::tokens(BlockContext& block_context, size_t plane, u
         block_context.residual_tokens[token_position] = coef;
     }
 
+    block_context.residual_token_count = coef_index;
     return coef_index > 0;
 }
 

@@ -42,7 +42,7 @@ inline i32 sin64(u8 angle)
 
 // (8.7.1.1) The function B( a, b, angle, 0 ) performs a butterfly rotation.
 template<typename T>
-inline void butterfly_rotation_in_place(Span<T> data, size_t index_a, size_t index_b, u8 angle, bool flip)
+inline void butterfly_rotation_in_place(T* data, size_t index_a, size_t index_b, u8 angle, bool flip)
 {
     auto cos = cos64(angle);
     auto sin = sin64(angle);
@@ -69,7 +69,7 @@ inline void butterfly_rotation_in_place(Span<T> data, size_t index_a, size_t ind
 
 // (8.7.1.1) The function H( a, b, 0 ) performs a Hadamard rotation.
 template<typename T>
-inline void hadamard_rotation_in_place(Span<T> data, size_t index_a, size_t index_b, bool flip)
+inline void hadamard_rotation_in_place(T* data, size_t index_a, size_t index_b, bool flip)
 {
     // The function H( a, b, 1 ) performs a Hadamard rotation with flipped indices and is specified as follows:
     // 1. The function H( b, a, 0 ) is invoked.
@@ -94,7 +94,7 @@ inline void hadamard_rotation_in_place(Span<T> data, size_t index_a, size_t inde
 }
 
 template<u8 log2_of_block_size, typename T>
-inline DecoderErrorOr<void> inverse_discrete_cosine_transform_array_permutation(Span<T> data)
+inline DecoderErrorOr<void> inverse_discrete_cosine_transform_array_permutation(T* data)
 {
     static_assert(log2_of_block_size >= 2 && log2_of_block_size <= 5, "Block size out of range.");
 
@@ -107,7 +107,7 @@ inline DecoderErrorOr<void> inverse_discrete_cosine_transform_array_permutation(
 
     // 1.1. A temporary array named copyT is set equal to T.
     Array<T, block_size> data_copy;
-    AK::TypedTransfer<T>::copy(data_copy.data(), data.data(), block_size);
+    AK::TypedTransfer<T>::copy(data_copy.data(), data, block_size);
 
     // 1.2. T[ i ] is set equal to copyT[ brev( n, i ) ] for i = 0..((1<<n) - 1).
     for (auto i = 0u; i < block_size; i++)
@@ -117,7 +117,7 @@ inline DecoderErrorOr<void> inverse_discrete_cosine_transform_array_permutation(
 }
 
 template<u8 log2_of_block_size, typename T>
-ALWAYS_INLINE DecoderErrorOr<void> inverse_discrete_cosine_transform(Span<T> data)
+ALWAYS_INLINE DecoderErrorOr<void> inverse_discrete_cosine_transform(T* data)
 {
     static_assert(log2_of_block_size >= 2 && log2_of_block_size <= 5, "Block size out of range.");
 
@@ -218,7 +218,7 @@ ALWAYS_INLINE DecoderErrorOr<void> inverse_discrete_cosine_transform(Span<T> dat
 }
 
 template<u8 log2_of_block_size, typename T>
-inline void inverse_asymmetric_discrete_sine_transform_input_array_permutation(Span<T> data)
+inline void inverse_asymmetric_discrete_sine_transform_input_array_permutation(T* data)
 {
     // The variable n0 is set equal to 1<<n.
     constexpr auto block_size = 1u << log2_of_block_size;
@@ -227,7 +227,7 @@ inline void inverse_asymmetric_discrete_sine_transform_input_array_permutation(S
 
     // A temporary array named copyT is set equal to T.
     Array<T, block_size> data_copy;
-    AK::TypedTransfer<T>::copy(data_copy.data(), data.data(), block_size);
+    AK::TypedTransfer<T>::copy(data_copy.data(), data, block_size);
 
     // The values at even locations T[ 2 * i ] are set equal to copyT[ n0 - 1 - 2 * i ] for i = 0..(n1-1).
     // The values at odd locations T[ 2 * i + 1 ] are set equal to copyT[ 2 * i ] for i = 0..(n1-1).
@@ -238,13 +238,13 @@ inline void inverse_asymmetric_discrete_sine_transform_input_array_permutation(S
 }
 
 template<u8 log2_of_block_size, typename T>
-inline void inverse_asymmetric_discrete_sine_transform_output_array_permutation(Span<T> data)
+inline void inverse_asymmetric_discrete_sine_transform_output_array_permutation(T* data)
 {
     constexpr auto block_size = 1u << log2_of_block_size;
 
     // A temporary array named copyT is set equal to T.
     Array<T, block_size> data_copy;
-    AK::TypedTransfer<T>::copy(data_copy.data(), data.data(), block_size);
+    AK::TypedTransfer<T>::copy(data_copy.data(), data, block_size);
 
     // The permutation depends on n as follows:
     if (log2_of_block_size == 4) {
@@ -269,9 +269,8 @@ inline void inverse_asymmetric_discrete_sine_transform_output_array_permutation(
 }
 
 template<typename T>
-inline void inverse_asymmetric_discrete_sine_transform_4(Span<T> data)
+inline void inverse_asymmetric_discrete_sine_transform_4(T* data)
 {
-    VERIFY(data.size() == 4);
     const i64 sinpi_1_9 = 5283;
     const i64 sinpi_2_9 = 9929;
     const i64 sinpi_3_9 = 13377;
@@ -333,7 +332,7 @@ inline void inverse_asymmetric_discrete_sine_transform_4(Span<T> data)
 // The function SB( a, b, angle, 0 ) performs a butterfly rotation.
 // Spec defines the source as array T, and the destination array as S.
 template<typename S, typename D>
-inline void butterfly_rotation(Span<S> source, Span<D> destination, size_t index_a, size_t index_b, u8 angle, bool flip)
+inline void butterfly_rotation(S* source, D* destination, size_t index_a, size_t index_b, u8 angle, bool flip)
 {
     // The function SB( a, b, angle, 0 ) performs a butterfly rotation according to the following ordered steps:
     auto cos = cos64(angle);
@@ -356,7 +355,7 @@ inline void butterfly_rotation(Span<S> source, Span<D> destination, size_t index
 // The function SH( a, b ) performs a Hadamard rotation and rounding.
 // Spec defines the source array as S, and the destination array as T.
 template<typename S, typename D>
-inline void hadamard_rotation(Span<S> source, Span<D> destination, size_t index_a, size_t index_b)
+inline void hadamard_rotation(S* source, D* destination, size_t index_a, size_t index_b)
 {
     // Keep the source buffer's precision until rounding.
     S a = source[index_a];
@@ -368,9 +367,8 @@ inline void hadamard_rotation(Span<S> source, Span<D> destination, size_t index_
 }
 
 template<typename T>
-inline DecoderErrorOr<void> inverse_asymmetric_discrete_sine_transform_8(Span<T> data)
+inline DecoderErrorOr<void> inverse_asymmetric_discrete_sine_transform_8(T* data)
 {
-    VERIFY(data.size() == 8);
     // This process does an in-place transform of the array T using:
 
     // A higher precision array S for T results.
@@ -386,18 +384,18 @@ inline DecoderErrorOr<void> inverse_asymmetric_discrete_sine_transform_8(Span<T>
 
     // 2. Invoke SB( 2*i, 1+2*i, 30-8*i, 1 ) for i = 0..3.
     for (auto i = 0u; i < 4; i++)
-        butterfly_rotation(data, high_precision_temp.span(), 2 * i, 1 + (2 * i), 30 - (8 * i), true);
+        butterfly_rotation(data, high_precision_temp.data(), 2 * i, 1 + (2 * i), 30 - (8 * i), true);
 
     // 3. Invoke SH( i, 4+i ) for i = 0..3.
     for (auto i = 0u; i < 4; i++)
-        hadamard_rotation(high_precision_temp.span(), data, i, 4 + i);
+        hadamard_rotation(high_precision_temp.data(), data, i, 4 + i);
 
     // 4. Invoke SB( 4+3*i, 5+i, 24-16*i, 1 ) for i = 0..1.
     for (auto i = 0u; i < 2; i++)
-        butterfly_rotation(data, high_precision_temp.span(), 4 + (3 * i), 5 + i, 24 - (16 * i), true);
+        butterfly_rotation(data, high_precision_temp.data(), 4 + (3 * i), 5 + i, 24 - (16 * i), true);
     // 5. Invoke SH( 4+i, 6+i ) for i = 0..1.
     for (auto i = 0u; i < 2; i++)
-        hadamard_rotation(high_precision_temp.span(), data, 4 + i, 6 + i);
+        hadamard_rotation(high_precision_temp.data(), data, 4 + i, 6 + i);
 
     // 6. Invoke H( i, 2+i, 0 ) for i = 0..1.
     for (auto i = 0u; i < 2; i++)
@@ -420,9 +418,8 @@ inline DecoderErrorOr<void> inverse_asymmetric_discrete_sine_transform_8(Span<T>
 }
 
 template<typename T>
-inline DecoderErrorOr<void> inverse_asymmetric_discrete_sine_transform_16(Span<T> data)
+inline DecoderErrorOr<void> inverse_asymmetric_discrete_sine_transform_16(T* data)
 {
-    VERIFY(data.size() == 16);
     // This process does an in-place transform of the array T using:
 
     // A higher precision array S for T results.
@@ -439,17 +436,17 @@ inline DecoderErrorOr<void> inverse_asymmetric_discrete_sine_transform_16(Span<T
 
     // 2. Invoke SB( 2*i, 1+2*i, 31-4*i, 1 ) for i = 0..7.
     for (auto i = 0u; i < 8; i++)
-        butterfly_rotation(data, high_precision_temp.span(), 2 * i, 1 + (2 * i), 31 - (4 * i), true);
+        butterfly_rotation(data, high_precision_temp.data(), 2 * i, 1 + (2 * i), 31 - (4 * i), true);
     // 3. Invoke SH( i, 8+i ) for i = 0..7.
     for (auto i = 0u; i < 8; i++)
-        hadamard_rotation(high_precision_temp.span(), data, i, 8 + i);
+        hadamard_rotation(high_precision_temp.data(), data, i, 8 + i);
 
     // 4. Invoke SB( 8+2*i, 9+2*i, 28-16*i, 1 ) for i = 0..3.
     for (auto i = 0u; i < 4; i++)
-        butterfly_rotation(data, high_precision_temp.span(), 8 + (2 * i), 9 + (2 * i), 128 + 28 - (16 * i), true);
+        butterfly_rotation(data, high_precision_temp.data(), 8 + (2 * i), 9 + (2 * i), 128 + 28 - (16 * i), true);
     // 5. Invoke SH( 8+i, 12+i ) for i = 0..3.
     for (auto i = 0u; i < 4; i++)
-        hadamard_rotation(high_precision_temp.span(), data, 8 + i, 12 + i);
+        hadamard_rotation(high_precision_temp.data(), data, 8 + i, 12 + i);
 
     // 6. Invoke H( i, 4+i, 0 ) for i = 0..3.
     for (auto i = 0u; i < 4; i++)
@@ -458,11 +455,11 @@ inline DecoderErrorOr<void> inverse_asymmetric_discrete_sine_transform_16(Span<T
     // 7. Invoke SB( 4+8*i+3*j, 5+8*i+j, 24-16*j, 1 ) for i = 0..1, for j = 0..1.
     for (auto i = 0u; i < 2; i++)
         for (auto j = 0u; j < 2; j++)
-            butterfly_rotation(data, high_precision_temp.span(), 4 + (8 * i) + (3 * j), 5 + (8 * i) + j, 24 - (16 * j), true);
+            butterfly_rotation(data, high_precision_temp.data(), 4 + (8 * i) + (3 * j), 5 + (8 * i) + j, 24 - (16 * j), true);
     // 8. Invoke SH( 4+8*j+i, 6+8*j+i ) for i = 0..1, j = 0..1.
     for (auto i = 0u; i < 2; i++)
         for (auto j = 0u; j < 2; j++)
-            hadamard_rotation(high_precision_temp.span(), data, 4 + (8 * j) + i, 6 + (8 * j) + i);
+            hadamard_rotation(high_precision_temp.data(), data, 4 + (8 * j) + i, 6 + (8 * j) + i);
 
     // 9. Invoke H( 8*j+i, 2+8*j+i, 0 ) for i = 0..1, for j = 0..1.
     for (auto i = 0u; i < 2; i++)
@@ -488,7 +485,7 @@ inline DecoderErrorOr<void> inverse_asymmetric_discrete_sine_transform_16(Span<T
 }
 
 template<u8 log2_of_block_size, typename T>
-inline DecoderErrorOr<void> inverse_asymmetric_discrete_sine_transform(Span<T> data)
+inline DecoderErrorOr<void> inverse_asymmetric_discrete_sine_transform(T* data)
 {
     // 8.7.1.9 Inverse ADST Process
 

@@ -1292,7 +1292,7 @@ ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d(BlockContext co
     // 2. The row transforms with i = 0..(n0-1) are applied as follows:
     for (auto i = 0u; i < block_size; i++) {
         // 1. Set T[ j ] equal to Dequant[ i ][ j ] for j = 0..(n0-1).
-        auto row = dequantized.slice(i * block_size, block_size);
+        auto* row = &dequantized[i * block_size];
 
         // 2. If Lossless is equal to 1, invoke the Inverse WHT process as specified in section 8.7.1.10 with shift equal
         //    to 2.
@@ -1344,9 +1344,9 @@ ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d(BlockContext co
             // Otherwise, if TxType is equal to DCT_DCT or TxType is equal to DCT_ADST, apply an inverse DCT as
             // follows:
             // 1. Invoke the inverse DCT permutation process as specified in section 8.7.1.2 with the input variable n.
-            TRY(inverse_discrete_cosine_transform_array_permutation<log2_of_block_size>(column.span()));
+            TRY(inverse_discrete_cosine_transform_array_permutation<log2_of_block_size>(column.data()));
             // 2. Invoke the inverse DCT process as specified in section 8.7.1.3 with the input variable n.
-            TRY(inverse_discrete_cosine_transform<log2_of_block_size>(column.span()));
+            TRY(inverse_discrete_cosine_transform<log2_of_block_size>(column.data()));
             break;
         case TransformType::ADST:
             // 4. Otherwise (TxType is equal to ADST_DCT or TxType is equal to ADST_ADST), invoke the inverse ADST
@@ -1356,7 +1356,7 @@ ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d(BlockContext co
             if constexpr (log2_of_block_size < 2 || log2_of_block_size > 4)
                 return DecoderError::corrupted("ADST transform used for unsupported block transform size."sv);
             else
-                TRY(inverse_asymmetric_discrete_sine_transform<log2_of_block_size>(column.span()));
+                TRY(inverse_asymmetric_discrete_sine_transform<log2_of_block_size>(column.data()));
             break;
         default:
             VERIFY_NOT_REACHED();

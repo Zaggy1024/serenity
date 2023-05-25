@@ -419,6 +419,20 @@ ALWAYS_INLINE void inverse_discrete_cosine_transform_32(T* data)
     hadamard_rotation(data, temp_1.data(), 15, 16);
 }
 
+// This is the simplification of the above inverse DCTs, but when `data`
+// only contains one non-zero coefficient at index 0.
+template<u8 log2_of_block_size>
+static ALWAYS_INLINE void inverse_discrete_cosine_transform_1_coef(auto* data)
+{
+    // Note that this transform is flipped, so we put sin first.
+    constexpr auto block_size = 1 << log2_of_block_size;
+    auto dc_value = rounded_right_shift(data[0] * sin64(16), 14);
+
+    for (u8 i = 0; i < block_size; i++)
+        data[i] = dc_value;
+}
+
+// (8.7.1.3) Inverse DCT process
 template<u8 log2_of_block_size, typename T>
 ALWAYS_INLINE void inverse_discrete_cosine_transform(T* data)
 {
@@ -700,10 +714,8 @@ ALWAYS_INLINE void inverse_asymmetric_discrete_sine_transform_16(T* data)
 template<u8 log2_of_block_size, typename T>
 ALWAYS_INLINE void inverse_asymmetric_discrete_sine_transform(T* data)
 {
-    // This process performs an in-place inverse ADST process on the array T of size 2^n for 2 ≤ n ≤ 4.
-    static_assert(log2_of_block_size >= 2 && log2_of_block_size <= 4);
-
     // 8.7.1.9 Inverse ADST Process
+    // This process performs an in-place inverse ADST process on the array T of size 2^n for 2 ≤ n ≤ 4.
 
     // The process to invoke depends on n as follows:
     if constexpr (log2_of_block_size == 2) {
@@ -713,9 +725,156 @@ ALWAYS_INLINE void inverse_asymmetric_discrete_sine_transform(T* data)
         // − Otherwise if n is equal to 3, invoke the Inverse ADST8 process specified in section 8.7.1.7.
         inverse_asymmetric_discrete_sine_transform_8(data);
         return;
-    } else {
+    } else if constexpr (log2_of_block_size == 4) {
         // − Otherwise (n is equal to 4), invoke the Inverse ADST16 process specified in section 8.7.1.8.
         inverse_asymmetric_discrete_sine_transform_16(data);
+    } else {
+        VERIFY_NOT_REACHED();
+    }
+}
+
+// This processes an 4-wide inverse ADST for a data set that has only one non-zero coefficient on the left.
+template<typename T>
+inline void inverse_asymmetric_discrete_sine_transform_1_coef_4(T* data)
+{
+    const i64 sinpi_1_9 = 5283;
+    const i64 sinpi_2_9 = 9929;
+    const i64 sinpi_3_9 = 13377;
+
+    i64 s0 = sinpi_1_9 * data[0];
+    i64 s1 = sinpi_2_9 * data[0];
+    i64 s2 = sinpi_3_9 * data[0];
+    auto s3 = s0 + s1;
+
+    // T[ 0 ] = Round2( s0, 14 )
+    data[0] = rounded_right_shift(s0, 14);
+    // T[ 1 ] = Round2( s1, 14 )
+    data[1] = rounded_right_shift(s1, 14);
+    // T[ 2 ] = Round2( s2, 14 )
+    data[2] = rounded_right_shift(s2, 14);
+    // T[ 3 ] = Round2( s3, 14 )
+    data[3] = rounded_right_shift(s3, 14);
+}
+
+// This processes an 8-wide inverse ADST for a data set that has only one non-zero coefficient on the left.
+template<typename T>
+ALWAYS_INLINE void inverse_asymmetric_discrete_sine_transform_1_coef_8(T* data)
+{
+    using HP = i64;
+
+    Array<T, 8> intermediate;
+
+    // Use high precision for cosine and sine so that when we multiply, it increases the precision
+    // of the product. Otherwise, we will experience overflows/truncation.
+    HP cos = cos64(30);
+    HP sin = sin64(30);
+    intermediate[0] = rounded_right_shift(data[0] * cos, 14);
+    intermediate[1] = rounded_right_shift(-data[0] * sin, 14);
+
+    data[0] = intermediate[0];
+    data[7] = intermediate[1];
+    cos = cos64(16);
+    sin = sin64(16);
+    intermediate[2] = rounded_right_shift(intermediate[0] * sin + intermediate[1] * cos, 14);
+    intermediate[3] = rounded_right_shift(intermediate[0] * cos - intermediate[1] * sin, 14);
+    cos = cos64(24);
+    sin = sin64(24);
+    intermediate[4] = rounded_right_shift(intermediate[0] * sin + intermediate[1] * cos, 14);
+    intermediate[5] = rounded_right_shift(intermediate[0] * cos - intermediate[1] * sin, 14);
+    cos = cos64(16);
+    sin = sin64(16);
+    intermediate[6] = rounded_right_shift(intermediate[4] * sin + intermediate[5] * cos, 14);
+    intermediate[7] = rounded_right_shift(intermediate[4] * cos - intermediate[5] * sin, 14);
+
+    inverse_asymmetric_discrete_sine_transform_output<3>(data, intermediate.data());
+}
+
+template<typename T>
+ALWAYS_INLINE void inverse_asymmetric_discrete_sine_transform_1_coef_16(T* data)
+{
+    using HP = i64;
+
+    Array<T, 16> intermediate;
+
+    HP cos = cos64(31);
+    HP sin = sin64(31);
+    T s0 = rounded_right_shift(data[0] * cos, 14);
+    T s1 = rounded_right_shift(-data[0] * sin, 14);
+    intermediate[0] = s0;
+    intermediate[1] = s1;
+
+    cos = cos64(48);
+    sin = sin64(48);
+    T a = rounded_right_shift(s0 * cos - s1 * sin, 14);
+    T b = rounded_right_shift(s0 * sin + s1 * cos, 14);
+    intermediate[2] = a;
+    intermediate[3] = b;
+
+    cos = cos64(24);
+    sin = sin64(24);
+    T s5 = rounded_right_shift(s0 * cos - s1 * sin, 14);
+    T s4 = rounded_right_shift(s0 * sin + s1 * cos, 14);
+    intermediate[4] = s4;
+    intermediate[5] = s5;
+
+    cos = cos64(112);
+    sin = sin64(112);
+    a = rounded_right_shift(s4 * cos - s5 * sin, 14);
+    b = rounded_right_shift(s4 * sin + s5 * cos, 14);
+    intermediate[6] = a;
+    intermediate[7] = b;
+
+    cos = cos64(28);
+    sin = sin64(28);
+    T s9 = rounded_right_shift(s0 * cos - s1 * sin, 14);
+    T s8 = rounded_right_shift(s0 * sin + s1 * cos, 14);
+    intermediate[8] = s0;
+    intermediate[9] = s9;
+
+    cos = cos64(112);
+    sin = sin64(112);
+    a = rounded_right_shift(s0 * cos - s9 * sin, 14);
+    b = rounded_right_shift(s0 * sin + s9 * cos, 14);
+    intermediate[10] = a;
+    intermediate[11] = b;
+
+    cos = cos64(24);
+    sin = sin64(24);
+    T s13 = rounded_right_shift(s8 * cos - s9 * sin, 14);
+    T s12 = rounded_right_shift(s8 * sin + s9 * cos, 14);
+    intermediate[12] = s12;
+    intermediate[13] = s13;
+
+    cos = cos64(48);
+    sin = sin64(48);
+    a = rounded_right_shift(s12 * cos - s13 * sin, 14);
+    b = rounded_right_shift(s12 * sin + s13 * cos, 14);
+    intermediate[14] = a;
+    intermediate[15] = b;
+
+    inverse_asymmetric_discrete_sine_transform_output<4>(data, intermediate.data());
+}
+
+// This processes an inverse ADST for a data set that has only one non-zero coefficient on the left.
+template<u8 log2_of_block_size, typename T>
+ALWAYS_INLINE void inverse_asymmetric_discrete_sine_transform_1_coef(T* data)
+{
+    // 8.7.1.9 Inverse ADST Process
+    // This process performs an in-place inverse ADST process on the array T of size 2^n for 2 ≤ n ≤ 4.
+
+    // The process to invoke depends on n as follows:
+    if constexpr (log2_of_block_size == 2) {
+        // − If n is equal to 2, invoke the Inverse ADST4 process specified in section 8.7.1.6.
+        inverse_asymmetric_discrete_sine_transform_1_coef_4(data);
+    } else if constexpr (log2_of_block_size == 3) {
+        // − Otherwise if n is equal to 3, invoke the Inverse ADST8 process specified in section 8.7.1.7.
+        inverse_asymmetric_discrete_sine_transform_1_coef_8(data);
+        return;
+    } else if constexpr (log2_of_block_size == 4) {
+        // − Otherwise (n is equal to 4), invoke the Inverse ADST16 process specified in section 8.7.1.8.
+        inverse_asymmetric_discrete_sine_transform_1_coef_16(data);
+    } else {
+        VERIFY_NOT_REACHED();
     }
 }
 

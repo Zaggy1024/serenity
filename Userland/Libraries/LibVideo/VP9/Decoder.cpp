@@ -1358,6 +1358,9 @@ ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d_templated(Span<
     static_assert(rows <= block_size || rows == NumericLimits<u8>::max());
     constexpr auto input_rows = min(rows, block_size);
 
+    if constexpr ((transform_set == TransformSet::DCT_ADST || transform_set == TransformSet::ADST_DCT || transform_set == TransformSet::ADST_ADST) && (log2_of_block_size < 2 || log2_of_block_size > 4))
+        return DecoderError::corrupted("ADST transform used for unsupported block transform size."sv);
+
     // 2. The row transforms with i = 0..(n0-1) are applied as follows:
     for (auto i = 0u; i < input_rows; i++) {
         // 1. Set T[ j ] equal to Dequant[ i ][ j ] for j = 0..(n0-1).
@@ -1372,16 +1375,19 @@ ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d_templated(Span<
             // follows:
             // 1. Invoke the inverse DCT permutation process as specified in section 8.7.1.2 with the input variable n.
             // 2. Invoke the inverse DCT process as specified in section 8.7.1.3 with the input variable n.
-            inverse_discrete_cosine_transform<log2_of_block_size>(row);
+            if constexpr (input_rows != 1)
+                inverse_discrete_cosine_transform<log2_of_block_size>(row);
+            else
+                inverse_discrete_cosine_transform_1_coef<log2_of_block_size>(row);
         } else if constexpr (transform_set == TransformSet::DCT_ADST || transform_set == TransformSet::ADST_ADST) {
             // 4. Otherwise (TxType is equal to DCT_ADST or TxType is equal to ADST_ADST), invoke the inverse ADST
             //    process as specified in section 8.7.1.9 with input variable n.
 
             // ADST can only be performed for block sizes from 4 to 16.
-            if constexpr (log2_of_block_size < 2 || log2_of_block_size > 4)
-                return DecoderError::corrupted("ADST transform used for unsupported block transform size."sv);
-            else
+            if constexpr (input_rows != 1)
                 inverse_asymmetric_discrete_sine_transform<log2_of_block_size>(row);
+            else
+                inverse_asymmetric_discrete_sine_transform_1_coef<log2_of_block_size>(row);
         } else {
             static_assert("Unknown transform type");
         }
@@ -1407,16 +1413,17 @@ ALWAYS_INLINE DecoderErrorOr<void> Decoder::inverse_transform_2d_templated(Span<
             // follows:
             // 1. Invoke the inverse DCT permutation process as specified in section 8.7.1.2 with the input variable n.
             // 2. Invoke the inverse DCT process as specified in section 8.7.1.3 with the input variable n.
-            inverse_discrete_cosine_transform<log2_of_block_size>(column.data());
+            if constexpr (input_rows != 1)
+                inverse_discrete_cosine_transform<log2_of_block_size>(column.data());
+            else
+                inverse_discrete_cosine_transform_1_coef<log2_of_block_size>(column.data());
         } else if constexpr (transform_set == TransformSet::ADST_DCT || transform_set == TransformSet::ADST_ADST) {
             // 4. Otherwise (TxType is equal to ADST_DCT or TxType is equal to ADST_ADST), invoke the inverse ADST
             //    process as specified in section 8.7.1.9 with input variable n.
-
-            // ADST can only be performed for block sizes from 4 to 16.
-            if constexpr (log2_of_block_size < 2 || log2_of_block_size > 4)
-                return DecoderError::corrupted("ADST transform used for unsupported block transform size."sv);
-            else
+            if constexpr (input_rows != 1)
                 inverse_asymmetric_discrete_sine_transform<log2_of_block_size>(column.data());
+            else
+                inverse_asymmetric_discrete_sine_transform_1_coef<log2_of_block_size>(column.data());
         } else {
             static_assert("Unknown transform type");
         }

@@ -457,37 +457,7 @@ inline void inverse_asymmetric_discrete_sine_transform_input_array_permutation(T
     }
 }
 
-template<u8 log2_of_block_size, typename T>
-inline void inverse_asymmetric_discrete_sine_transform_output_array_permutation(T* data)
-{
-    constexpr auto block_size = 1u << log2_of_block_size;
-
-    // A temporary array named copyT is set equal to T.
-    Array<T, block_size> data_copy;
-    AK::TypedTransfer<T>::copy(data_copy.data(), data, block_size);
-
-    // The permutation depends on n as follows:
-    if (log2_of_block_size == 4) {
-        // − If n is equal to 4,
-        // T[ 8*a + 4*b + 2*c + d ] is set equal to copyT[ 8*(d^c) + 4*(c^b) + 2*(b^a) + a ] for a = 0..1
-        // and b = 0..1 and c = 0..1 and d = 0..1.
-        for (auto a = 0u; a < 2; a++)
-            for (auto b = 0u; b < 2; b++)
-                for (auto c = 0u; c < 2; c++)
-                    for (auto d = 0u; d < 2; d++)
-                        data[(8 * a) + (4 * b) + (2 * c) + d] = data_copy[8 * (d ^ c) + 4 * (c ^ b) + 2 * (b ^ a) + a];
-    } else {
-        VERIFY(log2_of_block_size == 3);
-        // − Otherwise (n is equal to 3),
-        // T[ 4*a + 2*b + c ] is set equal to copyT[ 4*(c^b) + 2*(b^a) + a ] for a = 0..1 and
-        // b = 0..1 and c = 0..1.
-        for (auto a = 0u; a < 2; a++)
-            for (auto b = 0u; b < 2; b++)
-                for (auto c = 0u; c < 2; c++)
-                    data[4 * a + 2 * b + c] = data_copy[4 * (c ^ b) + 2 * (b ^ a) + a];
-    }
-}
-
+// (8.7.1.6) This process does an in-place transform of the array T to perform an inverse ADST.
 template<typename T>
 inline void inverse_asymmetric_discrete_sine_transform_4(T* data)
 {
@@ -585,6 +555,36 @@ ALWAYS_INLINE void hadamard_rotation_and_rounding(S* source, T* destination, siz
     destination[index_b] = rounded_right_shift(source[index_a] - source[index_b], 14);
 }
 
+// Applies inverse ADST output permutations and negations without branching.
+template<u8 log2_of_block_size, typename T>
+ALWAYS_INLINE void inverse_asymmetric_discrete_sine_transform_output(T* destination, T* source)
+{
+    constexpr auto block_size = 1 << log2_of_block_size;
+    for (size_t to_index = 0; to_index < block_size; to_index++) {
+        // − If n is equal to 4,
+        // T[ 8*a + 4*b + 2*c + d ] is set equal to copyT[ 8*(d^c) + 4*(c^b) + 2*(b^a) + a ] for a = 0..1
+        // and b = 0..1 and c = 0..1 and d = 0..1.
+        // − Otherwise (n is equal to 3),
+        // T[ 4*a + 2*b + c ] is set equal to copyT[ 4*(c^b) + 2*(b^a) + a ] for a = 0..1 and
+        // b = 0..1 and c = 0..1.
+
+        // The loops above boil down to (i = brev(i); i ^= (i << 1) & ).
+        auto from_index = brev<log2_of_block_size>(to_index);
+        constexpr auto max_index = (1 << log2_of_block_size) - 1;
+        from_index ^= (from_index << 1) & max_index;
+
+        // - If n is equal to 4,
+        // Set T[ 1+12*j+2*i ] equal to -T[ 1+12*j+2*i ] for i = 0..1, for j = 0..1.
+        // - Otherwise,
+        // Set T[ 1+2*i ] equal to -T[ 1+2*i ] for i = 0..3.
+
+        // These two loops have in common that they are negating the two first and last
+        // uneven indices.
+        auto negate = to_index == 1 || to_index == 3 || to_index == max_index || to_index == max_index - 2;
+        destination[to_index] = (source[from_index] ^ -negate) + negate;
+    }
+}
+
 // (8.7.1.7) This process does an in-place transform of the array T using a higher precision array S for intermediate
 // results.
 template<typename T>
@@ -628,13 +628,10 @@ ALWAYS_INLINE void inverse_asymmetric_discrete_sine_transform_8(T* data)
 
     // 8. Invoke the ADST output array permutation process specified in section 8.7.1.5 with the input variable n
     //    set equal to 3.
-    inverse_asymmetric_discrete_sine_transform_output_array_permutation<3>(data);
-
     // 9. Set T[ 1+2*i ] equal to -T[ 1+2*i ] for i = 0..3.
-    for (auto i = 0u; i < 4; i++) {
-        auto index = 1 + (2 * i);
-        data[index] = -data[index];
-    }
+    Array<T, 8> data_copy;
+    memcpy(data_copy.data(), data, sizeof(data_copy));
+    inverse_asymmetric_discrete_sine_transform_output<3>(data, data_copy.data());
 }
 
 // (8.7.1.8) This process does an in-place transform of the array T using a higher precision array S for intermediate
@@ -694,15 +691,10 @@ ALWAYS_INLINE void inverse_asymmetric_discrete_sine_transform_16(T* data)
 
     // 11. Invoke the ADST output array permutation process specified in section 8.7.1.5 with the input variable n
     // set equal to 4.
-    inverse_asymmetric_discrete_sine_transform_output_array_permutation<4>(data);
-
     // 12. Set T[ 1+12*j+2*i ] equal to -T[ 1+12*j+2*i ] for i = 0..1, for j = 0..1.
-    for (auto i = 0u; i < 2; i++) {
-        for (auto j = 0u; j < 2; j++) {
-            auto index = 1 + (12 * j) + (2 * i);
-            data[index] = -data[index];
-        }
-    }
+    Array<T, 16> data_copy;
+    memcpy(data_copy.data(), data, sizeof(data_copy));
+    inverse_asymmetric_discrete_sine_transform_output<4>(data, data_copy.data());
 }
 
 template<u8 log2_of_block_size, typename T>

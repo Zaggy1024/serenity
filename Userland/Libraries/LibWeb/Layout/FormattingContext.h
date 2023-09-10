@@ -153,7 +153,7 @@ protected:
 
     [[nodiscard]] Optional<CSSPixels> compute_auto_height_for_absolutely_positioned_element(Box const&, AvailableSpace const&, BeforeOrAfterInsideLayout) const;
 
-    [[nodiscard]] Box const* box_child_to_derive_baseline_from(Box const&) const;
+    Optional<CSSPixels> baseline_of_last_line_box_in_normal_flow(Box const&, CSSPixels = 0) const;
 
     Type m_type {};
 

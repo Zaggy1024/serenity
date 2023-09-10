@@ -1174,7 +1174,7 @@ CSSPixels BlockFormattingContext::greatest_child_width(Box const& box) const
                 // NOTE: Floats directly affect the automatic size of their containing block, but only indirectly anything above in the tree.
                 if (left_float->box->containing_block() != &box)
                     continue;
-                if (line_box.baseline() >= left_float->top_margin_edge || line_box.baseline() <= left_float->bottom_margin_edge) {
+                if (line_box.position().y() >= left_float->top_margin_edge || line_box.position().y() <= left_float->bottom_margin_edge) {
                     auto const& left_float_state = m_state.get(left_float->box);
                     extra_width_from_left_floats = max(extra_width_from_left_floats, left_float->offset_from_edge + left_float_state.content_width() + left_float_state.margin_box_right());
                 }
@@ -1184,7 +1184,7 @@ CSSPixels BlockFormattingContext::greatest_child_width(Box const& box) const
                 // NOTE: Floats directly affect the automatic size of their containing block, but only indirectly anything above in the tree.
                 if (right_float->box->containing_block() != &box)
                     continue;
-                if (line_box.baseline() >= right_float->top_margin_edge || line_box.baseline() <= right_float->bottom_margin_edge) {
+                if (line_box.position().y() >= right_float->top_margin_edge || line_box.position().y() <= right_float->bottom_margin_edge) {
                     auto const& right_float_state = m_state.get(right_float->box);
                     extra_width_from_right_floats = max(extra_width_from_right_floats, right_float->offset_from_edge + right_float_state.margin_box_left());
                 }

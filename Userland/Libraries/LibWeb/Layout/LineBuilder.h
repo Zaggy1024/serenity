@@ -50,18 +50,21 @@ public:
     auto& inline_formatting_context() { return m_context; }
 
 private:
-    void begin_new_line(bool increment_y, bool is_first_break_in_sequence = true);
+    void begin_new_line();
 
     bool should_break(CSSPixels next_item_width);
 
-    LineBox& ensure_last_line_box();
+    void after_fragment_appended();
+
+    LineBox& last_line_box();
 
     InlineFormattingContext& m_context;
     LayoutState& m_layout_state;
     LayoutState::UsedValues& m_containing_block_state;
     AvailableSize m_available_width_for_current_line { AvailableSize::make_indefinite() };
     CSSPixels m_current_y { 0 };
-    CSSPixels m_max_height_on_current_line { 0 };
+    CSSPixels m_current_line_baseline_to_top { 0 };
+    CSSPixels m_current_line_baseline_to_bottom { 0 };
     CSSPixels m_text_indent { 0 };
 
     bool m_last_line_needs_update { false };

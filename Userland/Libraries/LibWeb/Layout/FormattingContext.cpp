@@ -1675,59 +1675,46 @@ CSSPixelRect FormattingContext::absolute_content_rect(Box const& box) const
     return rect;
 }
 
-Box const* FormattingContext::box_child_to_derive_baseline_from(Box const& box) const
+CSSPixels FormattingContext::box_baseline(Box const& box) const
 {
-    if (!box.has_children() || box.children_are_inline())
-        return nullptr;
-    // To find the baseline of a box, we first look for the last in-flow child with at least one line box.
+    // The baseline of an 'inline-block' is the baseline of its last line box in the normal flow,
+    // unless it has either no in-flow line boxes or if its overflow property has a computed
+    // value other than visible, in which case the baseline is the bottom margin edge.
+    auto bottom_margin = [&]() { return m_state.get(box).margin_box_height(); };
+    if (box.computed_values().overflow_x() != CSS::Overflow::Visible || box.computed_values().overflow_y() != CSS::Overflow::Visible)
+        return bottom_margin();
+
+    auto child_box_baseline = baseline_of_last_line_box_in_normal_flow(box);
+    if (!child_box_baseline.has_value())
+        return bottom_margin();
+    return child_box_baseline.release_value();
+}
+
+Optional<CSSPixels> FormattingContext::baseline_of_last_line_box_in_normal_flow(Box const& box, CSSPixels ancestor_contributions) const
+{
+    if (box.is_out_of_flow(*this))
+        return {};
+    if (!box.has_children())
+        return {};
+
+    auto const& line_boxes = m_state.get(box).line_boxes;
+    if (!line_boxes.is_empty()) {
+        auto const& line_box = line_boxes.last();
+        return ancestor_contributions + line_box.position().y() + line_box.baseline_to_top();
+    }
+
     auto const* last_box_child = box.last_child_of_type<Box>();
     for (Node const* child = last_box_child; child; child = child->previous_sibling()) {
         if (!child->is_box())
             continue;
-        auto& child_box = static_cast<Box const&>(*child);
-        if (!child_box.is_out_of_flow(*this) && !m_state.get(child_box).line_boxes.is_empty()) {
-            return &child_box;
-        }
-        auto box_child_to_derive_baseline_from_candidate = box_child_to_derive_baseline_from(child_box);
-        if (box_child_to_derive_baseline_from_candidate)
-            return box_child_to_derive_baseline_from_candidate;
+        auto const& child_box = static_cast<Box const&>(*child);
+        auto const& child_box_state = m_state.get(child_box);
+        auto child_baseline = baseline_of_last_line_box_in_normal_flow(child_box, ancestor_contributions + child_box_state.margin_box_top() + child_box_state.offset.y());
+        if (child_baseline.has_value())
+            return child_baseline;
     }
     // None of the children has a line box.
-    return nullptr;
-}
-
-CSSPixels FormattingContext::box_baseline(Box const& box) const
-{
-    auto const& box_state = m_state.get(box);
-
-    // https://www.w3.org/TR/CSS2/visudet.html#propdef-vertical-align
-    auto const& vertical_align = box.computed_values().vertical_align();
-    if (vertical_align.has<CSS::VerticalAlign>()) {
-        switch (vertical_align.get<CSS::VerticalAlign>()) {
-        case CSS::VerticalAlign::Top:
-            // Top: Align the top of the aligned subtree with the top of the line box.
-            return box_state.border_box_top();
-        case CSS::VerticalAlign::Bottom:
-            // Bottom: Align the bottom of the aligned subtree with the bottom of the line box.
-            return box_state.content_height() + box_state.margin_box_top();
-        case CSS::VerticalAlign::TextTop:
-            // TextTop: Align the top of the box with the top of the parent's content area (see 10.6.1).
-            return CSSPixels::nearest_value_for(box.computed_values().font_size());
-        case CSS::VerticalAlign::TextBottom:
-            // TextTop: Align the bottom of the box with the bottom of the parent's content area (see 10.6.1).
-            return box_state.content_height() - CSSPixels::nearest_value_for(box.containing_block()->font().pixel_metrics().descent * 2);
-        default:
-            break;
-        }
-    }
-
-    if (!box_state.line_boxes.is_empty())
-        return box_state.margin_box_top() + box_state.offset.y() + box_state.line_boxes.last().baseline();
-    if (auto const* child_box = box_child_to_derive_baseline_from(box)) {
-        return box_baseline(*child_box);
-    }
-    // If none of the children have a baseline set, the bottom margin edge of the box is used.
-    return box_state.margin_box_height();
+    return {};
 }
 
 CSSPixelRect FormattingContext::margin_box_rect(Box const& box) const

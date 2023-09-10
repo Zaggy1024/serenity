@@ -625,27 +625,31 @@ static void paint_text_fragment(PaintContext& context, Layout::TextNode const& t
     auto& painter = context.painter();
 
     if (phase == PaintPhase::Foreground) {
-        auto fragment_absolute_rect = fragment.absolute_rect();
-        auto fragment_absolute_device_rect = context.enclosing_device_rect(fragment_absolute_rect);
 
-        if (text_node.document().inspected_layout_node() == &text_node)
+        if (text_node.document().inspected_layout_node() == &text_node) {
+            auto fragment_absolute_device_rect = context.enclosing_device_rect(fragment.absolute_rect());
             context.painter().draw_rect(fragment_absolute_device_rect.to_type<int>(), Color::Magenta);
+        }
 
         auto text = text_node.text_for_rendering();
 
-        DevicePixelPoint baseline_start { fragment_absolute_device_rect.x(), fragment_absolute_device_rect.y() + context.rounded_device_pixels(fragment.baseline()) };
+        CSSPixelPoint baseline_start_in_css_pixels = fragment.baseline_start();
+        Gfx::FloatPoint baseline_start {
+            baseline_start_in_css_pixels.x().to_double() * context.device_pixels_per_css_pixel(),
+            baseline_start_in_css_pixels.y().to_double() * context.device_pixels_per_css_pixel()
+        };
         Utf8View view { text.substring_view(fragment.start(), fragment.length()) };
 
         auto& scaled_font = fragment.layout_node().scaled_font(context);
 
-        painter.draw_text_run(baseline_start.to_type<int>(), view, scaled_font, text_node.computed_values().color());
+        painter.draw_text_run(baseline_start, view, scaled_font, text_node.computed_values().color());
 
         auto selection_rect = context.enclosing_device_rect(fragment.selection_rect(text_node.font())).to_type<int>();
         if (!selection_rect.is_empty()) {
             painter.fill_rect(selection_rect, CSS::SystemColor::highlight());
             Gfx::PainterStateSaver saver(painter);
             painter.add_clip_rect(selection_rect);
-            painter.draw_text_run(baseline_start.to_type<int>(), view, scaled_font, CSS::SystemColor::highlight_text());
+            painter.draw_text_run(baseline_start, view, scaled_font, CSS::SystemColor::highlight_text());
         }
 
         paint_text_decoration(context, painter, text_node, fragment);
@@ -722,8 +726,8 @@ void PaintableWithLines::paint(PaintContext& context, PaintPhase phase) const
             if (context.should_show_line_box_borders()) {
                 context.painter().draw_rect(fragment_absolute_device_rect.to_type<int>(), Color::Green);
                 context.painter().draw_line(
-                    context.rounded_device_point(fragment_absolute_rect.top_left().translated(0, fragment.baseline())).to_type<int>(),
-                    context.rounded_device_point(fragment_absolute_rect.top_right().translated(-1, fragment.baseline())).to_type<int>(), Color::Red);
+                    context.rounded_device_point(fragment_absolute_rect.top_left()).to_type<int>(),
+                    context.rounded_device_point(fragment_absolute_rect.top_right()).to_type<int>(), Color::Red);
             }
             if (is<Layout::TextNode>(fragment.layout_node()))
                 paint_text_fragment(context, static_cast<Layout::TextNode const&>(fragment.layout_node()), fragment, phase);

@@ -42,7 +42,15 @@ CSSPixelRect const LineBoxFragment::absolute_rect() const
     return rect;
 }
 
-int LineBoxFragment::text_index_at(CSSPixels x) const
+CSSPixelPoint const LineBoxFragment::baseline_start() const
+{
+    auto position = m_layout_node->containing_block()->paintable_box()->absolute_position();
+    position.translate_by(offset());
+    position.translate_by(0, m_text_baseline_offset);
+    return position;
+}
+
+size_t LineBoxFragment::text_index_at(CSSPixels x) const
 {
     if (!is<TextNode>(layout_node()))
         return 0;
@@ -151,7 +159,7 @@ CSSPixelRect LineBoxFragment::selection_rect(Gfx::Font const& font) const
 
 bool LineBoxFragment::is_atomic_inline() const
 {
-    return layout_node().is_replaced_box() || (layout_node().display().is_inline_outside() && !layout_node().display().is_flow_inside());
+    return !layout_node().display().is_flow_inside() || layout_node().is_replaced_box();
 }
 
 }

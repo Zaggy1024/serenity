@@ -203,7 +203,7 @@ void InlineFormattingContext::apply_justification_to_fragments(CSS::TextJustify 
     if (is_last_line || line_box.m_has_forced_break)
         return;
 
-    CSSPixels excess_horizontal_space = line_box.original_available_width().to_px_or_zero() - line_box.width();
+    CSSPixels excess_horizontal_space = line_box.available_width().to_px_or_zero() - line_box.width();
     CSSPixels excess_horizontal_space_including_whitespace = excess_horizontal_space;
     size_t whitespace_count = 0;
     for (auto& fragment : line_box.fragments()) {

@@ -17,7 +17,7 @@ class LineBoxFragment {
     friend class LineBox;
 
 public:
-    LineBoxFragment(Node const& layout_node, int start, int length, CSSPixelPoint offset, CSSPixelSize size, CSSPixels border_box_top, CSSPixels border_box_bottom)
+    LineBoxFragment(Node const& layout_node, size_t start, size_t length, CSSPixelPoint offset, CSSPixelSize size, CSSPixels border_box_top, CSSPixels border_box_bottom)
         : m_layout_node(layout_node)
         , m_start(start)
         , m_length(length)
@@ -29,9 +29,10 @@ public:
     }
 
     Node const& layout_node() const { return m_layout_node; }
-    int start() const { return m_start; }
-    int length() const { return m_length; }
+    size_t start() const { return m_start; }
+    size_t length() const { return m_length; }
     CSSPixelRect const absolute_rect() const;
+    CSSPixelPoint const baseline_start() const;
 
     CSSPixelPoint offset() const
     {
@@ -39,9 +40,14 @@ public:
     }
     void set_offset(CSSPixelPoint offset) { m_offset = offset; }
 
-    // The baseline of a fragment is the number of pixels from the top to the text baseline.
-    void set_baseline(CSSPixels y) { m_baseline = y; }
-    CSSPixels baseline() const { return m_baseline; }
+    CSSPixels text_baseline_offset() const
+    {
+        return m_text_baseline_offset;
+    }
+    void set_text_baseline_offset(CSSPixels distance)
+    {
+        m_text_baseline_offset = distance;
+    }
 
     CSSPixelSize size() const
     {
@@ -65,7 +71,7 @@ public:
     bool is_justifiable_whitespace() const;
     StringView text() const;
 
-    int text_index_at(CSSPixels x) const;
+    size_t text_index_at(CSSPixels x) const;
 
     CSSPixelRect selection_rect(Gfx::Font const&) const;
 
@@ -73,13 +79,13 @@ public:
 
 private:
     JS::NonnullGCPtr<Node const> m_layout_node;
-    int m_start { 0 };
-    int m_length { 0 };
+    size_t m_start { 0 };
+    size_t m_length { 0 };
     CSSPixelPoint m_offset;
     CSSPixelSize m_size;
+    CSSPixels m_text_baseline_offset { 0 };
     CSSPixels m_border_box_top { 0 };
     CSSPixels m_border_box_bottom { 0 };
-    CSSPixels m_baseline { 0 };
 };
 
 }

@@ -15,20 +15,22 @@
 
 namespace Web::Layout {
 
-void LineBox::add_fragment(Node const& layout_node, int start, int length, CSSPixels leading_size, CSSPixels trailing_size, CSSPixels leading_margin, CSSPixels trailing_margin, CSSPixels content_width, CSSPixels content_height, CSSPixels border_box_top, CSSPixels border_box_bottom)
+bool LineBox::add_fragment(Node const& layout_node, size_t start, size_t length, CSSPixels leading_size, CSSPixels trailing_size, CSSPixels leading_margin, CSSPixels trailing_margin, CSSPixels content_width, CSSPixels content_height, CSSPixels border_box_top, CSSPixels border_box_bottom)
 {
     bool text_align_is_justify = layout_node.computed_values().text_align() == CSS::TextAlign::Justify;
-    if (!text_align_is_justify && !m_fragments.is_empty() && &m_fragments.last().layout_node() == &layout_node) {
+    bool reuse_last_fragment = !text_align_is_justify && !m_fragments.is_empty() && &m_fragments.last().layout_node() == &layout_node;
+    if (reuse_last_fragment) {
         // The fragment we're adding is from the last Layout::Node on the line.
         // Expand the last fragment instead of adding a new one with the same Layout::Node.
         m_fragments.last().m_length = (start - m_fragments.last().m_start) + length;
         m_fragments.last().set_width(m_fragments.last().width() + content_width);
     } else {
-        CSSPixels x_offset = leading_margin + leading_size + m_width;
+        CSSPixels x_offset = m_position.x() + leading_margin + leading_size + m_width;
         CSSPixels y_offset = 0;
         m_fragments.append(LineBoxFragment { layout_node, start, length, CSSPixelPoint(x_offset, y_offset), CSSPixelSize(content_width, content_height), border_box_top, border_box_bottom });
     }
     m_width += leading_margin + leading_size + content_width + trailing_size + trailing_margin;
+    return !reuse_last_fragment;
 }
 
 void LineBox::trim_trailing_whitespace()

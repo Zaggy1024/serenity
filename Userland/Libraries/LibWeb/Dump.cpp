@@ -330,7 +330,7 @@ void dump_tree(StringBuilder& builder, Layout::Node const& layout_node, bool sho
                 line_box.width(),
                 line_box.height(),
                 line_box.bottom(),
-                line_box.baseline());
+                line_box.baseline_to_top());
             for (size_t fragment_index = 0; fragment_index < line_box.fragments().size(); ++fragment_index) {
                 auto& fragment = line_box.fragments()[fragment_index];
                 for (size_t i = 0; i < indent; ++i)

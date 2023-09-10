@@ -440,7 +440,7 @@ void paint_text_shadow(PaintContext& context, Layout::LineBoxFragment const& fra
 
         Gfx::Painter shadow_painter { *shadow_bitmap };
         // FIXME: "Spread" the shadow somehow.
-        DevicePixelPoint baseline_start(text_rect.x(), text_rect.y() + context.rounded_device_pixels(fragment.baseline()));
+        DevicePixelPoint baseline_start = text_rect.location();
         shadow_painter.draw_text_run(baseline_start.to_type<int>(), Utf8View(fragment.text()), fragment.layout_node().scaled_font(context), layer.color);
 
         // Blur

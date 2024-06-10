@@ -465,6 +465,7 @@ if (BUILD_LAGOM)
         Locale
         Manual
         Markdown
+        Media
         PDF
         Protocol
         Regex
@@ -475,7 +476,6 @@ if (BUILD_LAGOM)
         TextCodec
         Threading
         TLS
-        Video
         Wasm
         WebSocket
         XML
@@ -642,6 +642,7 @@ if (BUILD_LAGOM)
             LibIMAP
             LibLocale
             LibMarkdown
+            LibMedia
             LibPDF
             LibSQL
             LibTest
@@ -649,7 +650,6 @@ if (BUILD_LAGOM)
             LibTTF
             LibTimeZone
             LibUnicode
-            LibVideo
             LibXML
         )
         if (ENABLE_LAGOM_LIBWEB)
